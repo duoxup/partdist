@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "partdist"
+version = "0.1.0"
+description = "Storing 3D particle distribution and visualization"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "duoxup" }]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "imageio>=2.28",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "black", "ipykernel"]
+viz = ["matplotlib", "imageio"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["partdist*"]
+
+[tool.ruff]
+line-length = 100
