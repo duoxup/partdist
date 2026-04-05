@@ -282,23 +282,23 @@ def _momentum_evc_components_to_velocity(
     return vx, vy, vz
 
 
-def _update_velocity_components(
+def _update_momentum_components(
     dist: "ParticleDistribution",
-    vx: ArrayLike,
-    vy: ArrayLike,
-    vz: ArrayLike,
+    px: ArrayLike,
+    py: ArrayLike,
+    pz: ArrayLike,
     *,
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
-    Update the canonical stored velocity components in a distribution.
+    Update the canonical stored momentum components in a distribution.
 
     Parameters
     ----------
     dist : ParticleDistribution
         Input distribution.
-    vx, vy, vz : array-like
-        New velocity components in [m/s].
+    px, py, pz : array-like
+        New momentum components in [eV/c].
     inplace : bool
         Whether to modify the input object directly.
 
@@ -310,17 +310,17 @@ def _update_velocity_components(
     out = _copy_or_inplace(dist, inplace=inplace)
     n = len(out)
 
-    vx_arr = _as_1d_array(vx, dtype=float, name="vx")
-    vy_arr = _as_1d_array(vy, dtype=float, name="vy")
-    vz_arr = _as_1d_array(vz, dtype=float, name="vz")
+    px_arr = _as_1d_array(px, dtype=float, name="px")
+    py_arr = _as_1d_array(py, dtype=float, name="py")
+    pz_arr = _as_1d_array(pz, dtype=float, name="pz")
 
-    _validate_length(vx_arr, n, name="vx")
-    _validate_length(vy_arr, n, name="vy")
-    _validate_length(vz_arr, n, name="vz")
+    _validate_length(px_arr, n, name="px")
+    _validate_length(py_arr, n, name="py")
+    _validate_length(pz_arr, n, name="pz")
 
-    out.update_quantity("vx", vx_arr, inplace=inplace)
-    out.update_quantity("vy", vy_arr, inplace=inplace)
-    out.update_quantity("vz", vz_arr, inplace=inplace)
+    out.update_quantity("px", px_arr, inplace=True)
+    out.update_quantity("py", py_arr, inplace=True)
+    out.update_quantity("pz", pz_arr, inplace=True)
 
     return out
 
@@ -337,31 +337,12 @@ def _replace_velocity_from_momentum(
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
-    Replace canonical stored velocities by converting supplied momentum
-    components [eV/c] back to velocity [m/s].
+    Update the canonical stored momentum components from supplied [eV/c] values.
 
-    Parameters
-    ----------
-    dist : ParticleDistribution
-        Input distribution.
-    px, py, pz : array-like
-        Momentum components in [eV/c].
-    m0 : float
-        Rest mass in [kg].
-    q : float
-        Charge in [C].
-    c : float
-        Speed of light in [m/s].
-    inplace : bool
-        Whether to modify the input object directly.
-
-    Returns
-    -------
-    ParticleDistribution
-        Updated distribution.
+    Parameters m0, q, c are accepted for API compatibility but not used
+    (the values are already in eV/c and stored directly).
     """
-    vx, vy, vz = _momentum_evc_components_to_velocity(px, py, pz, m0=m0, q=q, c=c)
-    return _update_velocity_components(dist, vx, vy, vz, inplace=inplace)
+    return _update_momentum_components(dist, px, py, pz, inplace=inplace)
 
 
 def _get_xyz_data(dist: "ParticleDistribution") -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -378,6 +359,7 @@ def _get_xyz_data(dist: "ParticleDistribution") -> tuple[np.ndarray, np.ndarray,
 def _get_vxyz_data(dist: "ParticleDistribution") -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Return vx, vy, vz as 1D arrays.
+    These are derived quantities computed from the stored px/py/pz.
     """
     return (
         np.asarray(dist.vx, dtype=float).reshape(-1),

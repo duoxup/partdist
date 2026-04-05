@@ -23,7 +23,8 @@ from .utils import (
     _get_weight_array,
     _normalize_mask,
     _replace_velocity_from_momentum,
-    _update_velocity_components,
+    _update_momentum_components,
+    _velocity_components_to_momentum_evc,
 )
 
 
@@ -1097,10 +1098,12 @@ def match_twiss_plane(
 
     if plane == "x":
         out.update_quantity("x", u_new)
-        return _update_velocity_components(out, vp_new, out.vy, out.vz, inplace=True)
+        px_new, py_new, pz_new = _velocity_components_to_momentum_evc(vp_new, out.vy, out.vz)
+        return _update_momentum_components(out, px_new, py_new, pz_new, inplace=True)
 
     out.update_quantity("y", u_new)
-    return _update_velocity_components(out, out.vx, vp_new, out.vz, inplace=True)
+    px_new, py_new, pz_new = _velocity_components_to_momentum_evc(out.vx, vp_new, out.vz)
+    return _update_momentum_components(out, px_new, py_new, pz_new, inplace=True)
 
 
 def match_twiss_x(
