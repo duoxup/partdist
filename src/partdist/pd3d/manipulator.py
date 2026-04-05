@@ -23,8 +23,7 @@ from .utils import (
     _get_weight_array,
     _normalize_mask,
     _replace_velocity_from_momentum,
-    _update_momentum_components,
-    _velocity_components_to_momentum_evc,
+    _update_momentum_components
 )
 
 
