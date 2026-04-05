@@ -733,32 +733,22 @@ class ParticleDistribution:
     def _calc_speed(self) -> np.ndarray:
         return self.beta * g_c
 
-    def _calc_vx(self) -> np.ndarray:
+    def _calc_velocities(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         from .utils import _momentum_evc_components_to_velocity
-        vx, _, _ = _momentum_evc_components_to_velocity(
+        return _momentum_evc_components_to_velocity(
             self._quantities["px"].data,
             self._quantities["py"].data,
             self._quantities["pz"].data,
         )
-        return vx
+
+    def _calc_vx(self) -> np.ndarray:
+        return self._calc_velocities()[0]
 
     def _calc_vy(self) -> np.ndarray:
-        from .utils import _momentum_evc_components_to_velocity
-        _, vy, _ = _momentum_evc_components_to_velocity(
-            self._quantities["px"].data,
-            self._quantities["py"].data,
-            self._quantities["pz"].data,
-        )
-        return vy
+        return self._calc_velocities()[1]
 
     def _calc_vz(self) -> np.ndarray:
-        from .utils import _momentum_evc_components_to_velocity
-        _, _, vz = _momentum_evc_components_to_velocity(
-            self._quantities["px"].data,
-            self._quantities["py"].data,
-            self._quantities["pz"].data,
-        )
-        return vz
+        return self._calc_velocities()[2]
 
     def _calc_radial_position(self) -> np.ndarray:
         return np.sqrt(self.x**2 + self.y**2)
@@ -789,25 +779,25 @@ class ParticleDistribution:
     def _calc_kinetic_energy_eV(self) -> np.ndarray:
         return self.kinetic_energy / abs(g_e0)
 
-    def _calc_current_x(self) -> np.ndarray:
+    def _calc_current_flux_x(self) -> np.ndarray:
         return self.Q * self.vx
 
-    def _calc_current_y(self) -> np.ndarray:
+    def _calc_current_flux_y(self) -> np.ndarray:
         return self.Q * self.vy
 
-    def _calc_current_z(self) -> np.ndarray:
+    def _calc_current_flux_z(self) -> np.ndarray:
         return self.Q * self.vz
 
-    def _calc_current_abs(self) -> np.ndarray:
+    def _calc_current_flux_abs(self) -> np.ndarray:
         return np.sqrt(self.current_flux_x**2 + self.current_flux_y**2 + self.current_flux_z**2)
 
-    def _calc_current_x_abs(self) -> np.ndarray:
+    def _calc_current_flux_x_abs(self) -> np.ndarray:
         return np.abs(self.current_flux_x)
 
-    def _calc_current_y_abs(self) -> np.ndarray:
+    def _calc_current_flux_y_abs(self) -> np.ndarray:
         return np.abs(self.current_flux_y)
 
-    def _calc_current_z_abs(self) -> np.ndarray:
+    def _calc_current_flux_z_abs(self) -> np.ndarray:
         return np.abs(self.current_flux_z)
 
     def momentum_si(self, *, m0: float = g_m0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1020,31 +1010,31 @@ class ParticleDistribution:
 
     @property
     def current_flux_x(self) -> np.ndarray:
-        return self._calc_current_x()
+        return self._calc_current_flux_x()
 
     @property
     def current_flux_y(self) -> np.ndarray:
-        return self._calc_current_y()
+        return self._calc_current_flux_y()
 
     @property
     def current_flux_z(self) -> np.ndarray:
-        return self._calc_current_z()
+        return self._calc_current_flux_z()
 
     @property
     def current_flux_abs(self) -> np.ndarray:
-        return self._calc_current_abs()
+        return self._calc_current_flux_abs()
 
     @property
     def current_flux_x_abs(self) -> np.ndarray:
-        return self._calc_current_x_abs()
+        return self._calc_current_flux_x_abs()
 
     @property
     def current_flux_y_abs(self) -> np.ndarray:
-        return self._calc_current_y_abs()
+        return self._calc_current_flux_y_abs()
 
     @property
     def current_flux_z_abs(self) -> np.ndarray:
-        return self._calc_current_z_abs()
+        return self._calc_current_flux_z_abs()
 
     @property
     def extras(self) -> Dict[str, ParticleArrayQuantity]:
