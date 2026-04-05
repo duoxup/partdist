@@ -43,7 +43,7 @@ class ParticleDistribution:
     Fixed stored quantities
     -----------------------
     x, y, z   : position [m]
-    vx, vy, vz: velocity [m/s]
+    px, py, pz: momentum [eV/c]
     t         : time [s]
     Q         : macro-particle charge [C]
 
@@ -53,18 +53,21 @@ class ParticleDistribution:
     """
 
     _BASE_SPECS: dict[str, dict] = {
-        "x":  {"unit": "m",   "dtype_kind": "float", "short_name": "x",   "long_name": "horizontal position",   "latex_name": r"$x$",   "category": "position", "is_derived": False},
-        "y":  {"unit": "m",   "dtype_kind": "float", "short_name": "y",   "long_name": "vertical position",     "latex_name": r"$y$",   "category": "position", "is_derived": False},
-        "z":  {"unit": "m",   "dtype_kind": "float", "short_name": "z",   "long_name": "longitudinal position", "latex_name": r"$z$",   "category": "position", "is_derived": False},
-        "vx": {"unit": "m/s", "dtype_kind": "float", "short_name": "vx",  "long_name": "horizontal velocity",   "latex_name": r"$v_x$", "category": "velocity", "is_derived": False},
-        "vy": {"unit": "m/s", "dtype_kind": "float", "short_name": "vy",  "long_name": "vertical velocity",     "latex_name": r"$v_y$", "category": "velocity", "is_derived": False},
-        "vz": {"unit": "m/s", "dtype_kind": "float", "short_name": "vz",  "long_name": "longitudinal velocity", "latex_name": r"$v_z$", "category": "velocity", "is_derived": False},
-        "t":  {"unit": "s",   "dtype_kind": "float", "short_name": "t",   "long_name": "time",                  "latex_name": r"$t$",   "category": "time",     "is_derived": False},
-        "Q":  {"unit": "C",   "dtype_kind": "float", "short_name": "Q",   "long_name": "macro-particle charge", "latex_name": r"$Q$",   "category": "charge",   "is_derived": False},
+        "x":  {"unit": "m",     "dtype_kind": "float", "short_name": "x",  "long_name": "horizontal position",   "latex_name": r"$x$",   "category": "position", "is_derived": False},
+        "y":  {"unit": "m",     "dtype_kind": "float", "short_name": "y",  "long_name": "vertical position",     "latex_name": r"$y$",   "category": "position", "is_derived": False},
+        "z":  {"unit": "m",     "dtype_kind": "float", "short_name": "z",  "long_name": "longitudinal position", "latex_name": r"$z$",   "category": "position", "is_derived": False},
+        "px": {"unit": "eV/c",  "dtype_kind": "float", "short_name": "px", "long_name": "horizontal momentum",   "latex_name": r"$p_x$", "category": "momentum", "is_derived": False},
+        "py": {"unit": "eV/c",  "dtype_kind": "float", "short_name": "py", "long_name": "vertical momentum",     "latex_name": r"$p_y$", "category": "momentum", "is_derived": False},
+        "pz": {"unit": "eV/c",  "dtype_kind": "float", "short_name": "pz", "long_name": "longitudinal momentum", "latex_name": r"$p_z$", "category": "momentum", "is_derived": False},
+        "t":  {"unit": "s",     "dtype_kind": "float", "short_name": "t",  "long_name": "time",                  "latex_name": r"$t$",   "category": "time",     "is_derived": False},
+        "Q":  {"unit": "C",     "dtype_kind": "float", "short_name": "Q",  "long_name": "macro-particle charge", "latex_name": r"$Q$",   "category": "charge",   "is_derived": False},
     }
 
     _DERIVED_SPECS: dict[str, dict] = {
         "Q_abs":              {"unit": "C",      "dtype_kind": "float", "short_name": "abs. Q",    "long_name": "macro-particle charge",         "latex_name": r"$|Q|$",       "category": "charge",   "is_derived": True},
+        "vx":                 {"unit": "m/s",    "dtype_kind": "float", "short_name": "vx",        "long_name": "horizontal velocity",           "latex_name": r"$v_x$",       "category": "velocity", "is_derived": True},
+        "vy":                 {"unit": "m/s",    "dtype_kind": "float", "short_name": "vy",        "long_name": "vertical velocity",             "latex_name": r"$v_y$",       "category": "velocity", "is_derived": True},
+        "vz":                 {"unit": "m/s",    "dtype_kind": "float", "short_name": "vz",        "long_name": "longitudinal velocity",         "latex_name": r"$v_z$",       "category": "velocity", "is_derived": True},
         "radial_position":    {"unit": "m",      "dtype_kind": "float", "short_name": "r",         "long_name": "radial position",               "latex_name": r"$r$",         "category": "geometry", "is_derived": True},
         "transverse_speed":   {"unit": "m/s",    "dtype_kind": "float", "short_name": "v_perp",    "long_name": "transverse speed",              "latex_name": r"$v_{\perp}$", "category": "geometry", "is_derived": True},
         "radial_velocity":    {"unit": "m/s",    "dtype_kind": "float", "short_name": "v_r",       "long_name": "radial velocity",               "latex_name": r"$v_r$",       "category": "geometry", "is_derived": True},
@@ -72,22 +75,19 @@ class ParticleDistribution:
         "speed":              {"unit": "m/s",    "dtype_kind": "float", "short_name": "v",         "long_name": "speed",                         "latex_name": r"$v$",         "category": "velocity", "is_derived": True},
         "beta":               {"unit": "",       "dtype_kind": "float", "short_name": "beta",      "long_name": "normalized speed",              "latex_name": r"$\beta$",     "category": "velocity", "is_derived": True},
         "gamma":              {"unit": "",       "dtype_kind": "float", "short_name": "gamma",     "long_name": "Lorentz factor",                "latex_name": r"$\gamma$",    "category": "velocity", "is_derived": True},
-        "px":                 {"unit": "eV/c",   "dtype_kind": "float", "short_name": "px",        "long_name": "horizontal momentum",           "latex_name": r"$p_x$",       "category": "momentum", "is_derived": True},
-        "py":                 {"unit": "eV/c",   "dtype_kind": "float", "short_name": "py",        "long_name": "vertical momentum",             "latex_name": r"$p_y$",       "category": "momentum", "is_derived": True},
-        "pz":                 {"unit": "eV/c",   "dtype_kind": "float", "short_name": "pz",        "long_name": "longitudinal momentum",         "latex_name": r"$p_z$",       "category": "momentum", "is_derived": True},
         "xp":                 {"unit": "rad",    "dtype_kind": "float", "short_name": "xp",        "long_name": "horizontal normlized angle",    "latex_name": r"$x'$",        "category": "other",    "is_derived": True},
         "yp":                 {"unit": "rad",    "dtype_kind": "float", "short_name": "yp",        "long_name": "vertical normlized angle",      "latex_name": r"$y'$",        "category": "other",    "is_derived": True},
         "p_abs_si":           {"unit": "kg*m/s", "dtype_kind": "float", "short_name": "p",         "long_name": "momentum magnitude (SI)",       "latex_name": r"$|p|$",       "category": "momentum", "is_derived": True},
         "p_abs":              {"unit": "eV/c",   "dtype_kind": "float", "short_name": "p",         "long_name": "momentum magnitude",            "latex_name": r"$|p|$",       "category": "momentum", "is_derived": True},
         "kinetic_energy":     {"unit": "J",      "dtype_kind": "float", "short_name": "Ek",        "long_name": "kinetic energy",                "latex_name": r"$E_k$",       "category": "energy",   "is_derived": True},
         "kinetic_energy_eV":  {"unit": "eV",     "dtype_kind": "float", "short_name": "Ek",        "long_name": "kinetic energy",                "latex_name": r"$E_k$",       "category": "energy",   "is_derived": True},
-        "current_flux_x":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_x_like",  "long_name": "x current-like weight",         "latex_name": r"$Qv_x$",      "category": "current",  "is_derived": True},
-        "current_flux_y":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_y_like",  "long_name": "y current-like weight",         "latex_name": r"$Qv_y$",      "category": "current",  "is_derived": True},
-        "current_flux_z":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_z_like",  "long_name": "z current-like weight",         "latex_name": r"$Qv_z$",      "category": "current",  "is_derived": True},
-        "current_flux_abs":        {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_like",    "long_name": "current-like weight magnitude", "latex_name": r"$|Qv|$",      "category": "current",  "is_derived": True},
-        "current_flux_x_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight", "latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
-        "current_flux_y_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight", "latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
-        "current_flux_z_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight", "latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
+        "current_flux_x":     {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_x_like",  "long_name": "x current-like weight",         "latex_name": r"$Qv_x$",      "category": "current",  "is_derived": True},
+        "current_flux_y":     {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_y_like",  "long_name": "y current-like weight",         "latex_name": r"$Qv_y$",      "category": "current",  "is_derived": True},
+        "current_flux_z":     {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_z_like",  "long_name": "z current-like weight",         "latex_name": r"$Qv_z$",      "category": "current",  "is_derived": True},
+        "current_flux_abs":   {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_like",    "long_name": "current-like weight magnitude", "latex_name": r"$|Qv|$",      "category": "current",  "is_derived": True},
+        "current_flux_x_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight","latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
+        "current_flux_y_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight","latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
+        "current_flux_z_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight","latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
     }
 
     def __init__(
@@ -96,9 +96,9 @@ class ParticleDistribution:
         x: ArrayLike,
         y: ArrayLike,
         z: ArrayLike,
-        vx: ArrayLike,
-        vy: ArrayLike,
-        vz: ArrayLike,
+        px: ArrayLike,
+        py: ArrayLike,
+        pz: ArrayLike,
         t: ArrayLike,
         Q: ArrayLike,
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
@@ -106,14 +106,14 @@ class ParticleDistribution:
         self._quantities: Dict[str, ParticleArrayQuantity] = {}
 
         base_arrays = {
-            "x": _as_1d_float_array(x, "x"),
-            "y": _as_1d_float_array(y, "y"),
-            "z": _as_1d_float_array(z, "z"),
-            "vx": _as_1d_float_array(vx, "vx"),
-            "vy": _as_1d_float_array(vy, "vy"),
-            "vz": _as_1d_float_array(vz, "vz"),
-            "t": _as_1d_float_array(t, "t"),
-            "Q": _as_1d_float_array(Q, "Q"),
+            "x":  _as_1d_float_array(x,  "x"),
+            "y":  _as_1d_float_array(y,  "y"),
+            "z":  _as_1d_float_array(z,  "z"),
+            "px": _as_1d_float_array(px, "px"),
+            "py": _as_1d_float_array(py, "py"),
+            "pz": _as_1d_float_array(pz, "pz"),
+            "t":  _as_1d_float_array(t,  "t"),
+            "Q":  _as_1d_float_array(Q,  "Q"),
         }
 
         n = len(base_arrays["x"])
@@ -148,9 +148,9 @@ class ParticleDistribution:
         x: ArrayLike,
         y: ArrayLike,
         z: ArrayLike,
-        vx: ArrayLike,
-        vy: ArrayLike,
-        vz: ArrayLike,
+        px: ArrayLike,
+        py: ArrayLike,
+        pz: ArrayLike,
         t: ArrayLike,
         Q: ArrayLike | None = None,
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
@@ -159,24 +159,19 @@ class ParticleDistribution:
         n = len(x)
         if Q is None:
             Q = np.ones(n, dtype=float)
-        return cls(x=x, y=y, z=z, vx=vx, vy=vy, vz=vz, t=t, Q=Q, extras=extras)
+        return cls(x=x, y=y, z=z, px=px, py=py, pz=pz, t=t, Q=Q, extras=extras)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, ArrayLike]) -> "ParticleDistribution":
-        required = ("x", "y", "z", "vx", "vy", "vz", "t", "Q")
+        required = ("x", "y", "z", "px", "py", "pz", "t", "Q")
         missing = [k for k in required if k not in data]
         if missing:
             raise KeyError(f"Missing required keys: {missing}")
         extras = {k: v for k, v in data.items() if k not in required}
         return cls(
-            x=data["x"],
-            y=data["y"],
-            z=data["z"],
-            vx=data["vx"],
-            vy=data["vy"],
-            vz=data["vz"],
-            t=data["t"],
-            Q=data["Q"],
+            x=data["x"], y=data["y"], z=data["z"],
+            px=data["px"], py=data["py"], pz=data["pz"],
+            t=data["t"], Q=data["Q"],
             extras=extras,
         )
 
@@ -531,9 +526,9 @@ class ParticleDistribution:
             x=self.x.copy(),
             y=self.y.copy(),
             z=self.z.copy(),
-            vx=self.vx.copy(),
-            vy=self.vy.copy(),
-            vz=self.vz.copy(),
+            px=self.px.copy(),
+            py=self.py.copy(),
+            pz=self.pz.copy(),
             t=self.t.copy(),
             Q=self.Q.copy(),
             extras=extras,
@@ -594,14 +589,9 @@ class ParticleDistribution:
             )
 
         return ParticleDistribution(
-            x=self.x[mask],
-            y=self.y[mask],
-            z=self.z[mask],
-            vx=self.vx[mask],
-            vy=self.vy[mask],
-            vz=self.vz[mask],
-            t=self.t[mask],
-            Q=self.Q[mask],
+            x=self.x[mask], y=self.y[mask], z=self.z[mask],
+            px=self.px[mask], py=self.py[mask], pz=self.pz[mask],
+            t=self.t[mask], Q=self.Q[mask],
             extras=extras,
         )
 
@@ -702,27 +692,73 @@ class ParticleDistribution:
 
     def centroid(self, weight: str | np.ndarray | None = "absQ") -> dict[str, float]:
         return {
-            "x": self.mean("x", weight=weight),
-            "y": self.mean("y", weight=weight),
-            "z": self.mean("z", weight=weight),
-            "vx": self.mean("vx", weight=weight),
-            "vy": self.mean("vy", weight=weight),
-            "vz": self.mean("vz", weight=weight),
-            "t": self.mean("t", weight=weight),
-            "Q": self.mean("Q", weight=weight),
+            "x":  self.mean("x",  weight=weight),
+            "y":  self.mean("y",  weight=weight),
+            "z":  self.mean("z",  weight=weight),
+            "px": self.mean("px", weight=weight),
+            "py": self.mean("py", weight=weight),
+            "pz": self.mean("pz", weight=weight),
+            "t":  self.mean("t",  weight=weight),
+            "Q":  self.mean("Q",  weight=weight),
         }
 
     def sigma_dict(self, weight: str | np.ndarray | None = "absQ") -> dict[str, float]:
         return {
-            "x": self.std("x", weight=weight),
-            "y": self.std("y", weight=weight),
-            "z": self.std("z", weight=weight),
-            "vx": self.std("vx", weight=weight),
-            "vy": self.std("vy", weight=weight),
-            "vz": self.std("vz", weight=weight),
-            "t": self.std("t", weight=weight),
-            "Q": self.std("Q", weight=weight),
+            "x":  self.std("x",  weight=weight),
+            "y":  self.std("y",  weight=weight),
+            "z":  self.std("z",  weight=weight),
+            "px": self.std("px", weight=weight),
+            "py": self.std("py", weight=weight),
+            "pz": self.std("pz", weight=weight),
+            "t":  self.std("t",  weight=weight),
+            "Q":  self.std("Q",  weight=weight),
         }
+
+    def _calc_p_abs(self) -> np.ndarray:
+        return np.sqrt(self._quantities["px"].data**2
+                       + self._quantities["py"].data**2
+                       + self._quantities["pz"].data**2)
+
+    def _calc_p_abs_si(self) -> np.ndarray:
+        return self.p_abs * (abs(g_e0) / g_c)
+
+    def _calc_gamma(self) -> np.ndarray:
+        p_si = self.p_abs_si
+        return np.sqrt(1.0 + (p_si / (g_m0 * g_c)) ** 2)
+
+    def _calc_beta(self) -> np.ndarray:
+        g = self.gamma
+        return np.sqrt(1.0 - 1.0 / g**2)
+
+    def _calc_speed(self) -> np.ndarray:
+        return self.beta * g_c
+
+    def _calc_vx(self) -> np.ndarray:
+        from .utils import _momentum_evc_components_to_velocity
+        vx, _, _ = _momentum_evc_components_to_velocity(
+            self._quantities["px"].data,
+            self._quantities["py"].data,
+            self._quantities["pz"].data,
+        )
+        return vx
+
+    def _calc_vy(self) -> np.ndarray:
+        from .utils import _momentum_evc_components_to_velocity
+        _, vy, _ = _momentum_evc_components_to_velocity(
+            self._quantities["px"].data,
+            self._quantities["py"].data,
+            self._quantities["pz"].data,
+        )
+        return vy
+
+    def _calc_vz(self) -> np.ndarray:
+        from .utils import _momentum_evc_components_to_velocity
+        _, _, vz = _momentum_evc_components_to_velocity(
+            self._quantities["px"].data,
+            self._quantities["py"].data,
+            self._quantities["pz"].data,
+        )
+        return vz
 
     def _calc_radial_position(self) -> np.ndarray:
         return np.sqrt(self.x**2 + self.y**2)
@@ -738,57 +774,14 @@ class ParticleDistribution:
         r = self.radial_position + 1e-30
         return (self.x * self.vy - self.y * self.vx) / r
 
-    def _calc_speed(self) -> np.ndarray:
-        return np.sqrt(self.vx**2 + self.vy**2 + self.vz**2)
+    def _calc_xp(self) -> np.ndarray:
+        return self._quantities["px"].data / self.p_abs
 
-    def _calc_beta(self) -> np.ndarray:
-        return np.minimum(self.speed / g_c, 1.0 - 1e-15)
+    def _calc_yp(self) -> np.ndarray:
+        return self._quantities["py"].data / self.p_abs
 
-    def _calc_gamma(self) -> np.ndarray:
-        b = self.beta
-        return 1.0 / np.sqrt(1.0 - b**2)
-
-    def momentum_si(self, *, m0: float = g_m0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        g = self.gamma
-        return g * m0 * self.vx, g * m0 * self.vy, g * m0 * self.vz
-
-    def _momentum_evc_backup(self, *, m0: float = g_m0, e0: float = g_e0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        px_si, py_si, pz_si = self.momentum_si(m0=m0)
-        factor = g_c / abs(e0)
-        return px_si * factor, py_si * factor, pz_si * factor
-    
-    def momentum_evc(self, *, m0: float = g_m0, e0: float = g_e0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from .utils import _velocity_components_to_momentum_evc
-        px_evc, py_evc, pz_evc = _velocity_components_to_momentum_evc(
-            self.vx, self.vy, self.vz,
-            m0=m0, q=e0)
-        return px_evc, py_evc, pz_evc
-    
     def _calc_Q_abs(self) -> np.ndarray:
         return np.abs(self.Q)
-    
-    def _calc_px(self) -> np.ndarray:
-        return self.momentum_evc()[0]
-
-    def _calc_py(self) -> np.ndarray:
-        return self.momentum_evc()[1]
-
-    def _calc_pz(self) -> np.ndarray:
-        return self.momentum_evc()[2]
-    
-    def _calc_xp(self) -> np.ndarray:
-        return self.px/self.p_abs
-    
-    def _calc_yp(self) -> np.ndarray:
-        return self.py/self.p_abs
-
-    def _calc_p_abs_si(self) -> np.ndarray:
-        px, py, pz = self.momentum_si()
-        return np.sqrt(px**2 + py**2 + pz**2)
-
-    def _calc_p_abs(self) -> np.ndarray:
-        px, py, pz = self.momentum_evc()
-        return np.sqrt(px**2 + py**2 + pz**2)
 
     def _calc_kinetic_energy(self) -> np.ndarray:
         return (self.gamma - 1.0) * (g_m0 * g_c**2)
@@ -806,16 +799,29 @@ class ParticleDistribution:
         return self.Q * self.vz
 
     def _calc_current_abs(self) -> np.ndarray:
-        return np.sqrt(self.current_x**2 + self.current_y**2 + self.current_z**2)
+        return np.sqrt(self.current_flux_x**2 + self.current_flux_y**2 + self.current_flux_z**2)
 
     def _calc_current_x_abs(self) -> np.ndarray:
-        return np.abs(self.current_x)
+        return np.abs(self.current_flux_x)
 
     def _calc_current_y_abs(self) -> np.ndarray:
-        return np.abs(self.current_y)
+        return np.abs(self.current_flux_y)
 
     def _calc_current_z_abs(self) -> np.ndarray:
-        return np.abs(self.current_z)
+        return np.abs(self.current_flux_z)
+
+    def momentum_si(self, *, m0: float = g_m0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        factor = abs(g_e0) / g_c  # eV/c -> kg·m/s
+        px_data = self._quantities["px"].data
+        py_data = self._quantities["py"].data
+        pz_data = self._quantities["pz"].data
+        return px_data * factor, py_data * factor, pz_data * factor
+
+    def momentum_evc(self, *, m0: float = g_m0, e0: float = g_e0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        px_data = self._quantities["px"].data
+        py_data = self._quantities["py"].data
+        pz_data = self._quantities["pz"].data
+        return px_data.copy(), py_data.copy(), pz_data.copy()
 
     #%% shortcuts for statistics
     @property
@@ -925,16 +931,28 @@ class ParticleDistribution:
         return self._quantities["z"].data
 
     @property
+    def px(self) -> np.ndarray:
+        return self._quantities["px"].data
+
+    @property
+    def py(self) -> np.ndarray:
+        return self._quantities["py"].data
+
+    @property
+    def pz(self) -> np.ndarray:
+        return self._quantities["pz"].data
+
+    @property
     def vx(self) -> np.ndarray:
-        return self._quantities["vx"].data
+        return self._calc_vx()
 
     @property
     def vy(self) -> np.ndarray:
-        return self._quantities["vy"].data
+        return self._calc_vy()
 
     @property
     def vz(self) -> np.ndarray:
-        return self._quantities["vz"].data
+        return self._calc_vz()
 
     @property
     def t(self) -> np.ndarray:
@@ -975,18 +993,6 @@ class ParticleDistribution:
     @property
     def gamma(self) -> np.ndarray:
         return self._calc_gamma()
-
-    @property
-    def px(self) -> np.ndarray:
-        return self._calc_px()
-
-    @property
-    def py(self) -> np.ndarray:
-        return self._calc_py()
-    
-    @property
-    def pz(self) -> np.ndarray:
-        return self._calc_pz()
 
     @property
     def xp(self) -> np.ndarray:
