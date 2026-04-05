@@ -6,7 +6,7 @@ Created on Tue Mar 24 20:46:56 2026
 @author: duoxup
 """
 
-from test_io3d import dist_from_astra as dist
+# from test_io3d import dist_from_astra as dist
 
 import partdist.pd3d.manipulator as manip
 import partdist.pd3d.analysis as ana
@@ -17,6 +17,9 @@ import partdist.pd3d.io as io
 def _inverted_parabola(z_max):
     return lambda z: 3 / (4*z_max) * (1 - z**2 / z_max**2)
 
+
+fname = r'/lustre/fs25/group/pitz/duoxup/THzSuperRad/debug/Q=-150pC-beta_x_scale_from_opt=1.000/Q--150pC-IPart-200000-sig_z-0.05mm.ini'
+dist = io.read_astra_distribution(fname)
 
 dist = manip.replicate_longitudinally(dist, 5, 3e-4, sort_by=None)
 

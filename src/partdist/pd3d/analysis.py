@@ -1086,3 +1086,175 @@ def analyze_longitudinal_trend(
         "trend": trend,
         "residuals": residuals,
     }
+
+def line_charge_profile_z(
+    dist: ParticleDistribution,
+    *,
+    bins: int | Sequence[float] | np.ndarray = 100,
+    range: tuple[float, float] | None = None,
+    z_key: str = "z",
+    q_key: str = "Q",
+    return_bin_centers: bool = True,
+    absolute_charge: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the longitudinal line-charge-density profile lambda(z).
+
+    Parameters
+    ----------
+    dist
+        ParticleDistribution instance.
+    bins
+        Number of bins or explicit bin edges, passed to numpy.histogram.
+    range
+        Optional z range passed to numpy.histogram when `bins` is an integer.
+    z_key
+        Quantity key for longitudinal position, usually 'z'.
+    q_key
+        Quantity key for particle charge, usually 'Q'.
+    return_bin_centers
+        If True, return bin centers. Otherwise return bin edges.
+    absolute_charge
+        If True, use abs(Q) for histogramming and return a nonnegative
+        line-charge density. If False, preserve the sign of Q.
+
+    Returns
+    -------
+    z_axis, lambda_z
+        z_axis:
+            Bin centers if return_bin_centers=True, otherwise bin edges.
+        lambda_z:
+            Line charge density in [C/m], one value per bin.
+
+    Notes
+    -----
+    The line charge density is computed as
+
+        lambda_k = Q_k / dz_k
+
+    where Q_k is the total charge in bin k and dz_k is the bin width.
+    """
+    z = np.asarray(dist.get_data(z_key), dtype=float)
+    q = np.asarray(dist.get_data(q_key), dtype=float)
+
+    if absolute_charge:
+        q = np.abs(q)
+
+    charge_hist, edges = np.histogram(z, bins=bins, range=range, weights=q)
+
+    dz = np.diff(edges)
+    if np.any(dz <= 0.0):
+        raise ValueError("Bin edges must be strictly increasing.")
+
+    lambda_z = charge_hist / dz  # [C/m]
+
+    if return_bin_centers:
+        z_axis = 0.5 * (edges[:-1] + edges[1:])
+    else:
+        z_axis = edges
+
+    return z_axis, lambda_z
+
+
+def current_profile_z(
+    dist: ParticleDistribution,
+    *,
+    bins: int | Sequence[float] | np.ndarray = 100,
+    range: tuple[float, float] | None = None,
+    z_key: str = "z",
+    q_key: str = "Q",
+    vz_key: str = "vz",
+    use_c_approx: bool = False,
+    return_bin_centers: bool = True,
+    absolute_charge: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the longitudinal current profile I(z).
+
+    Parameters
+    ----------
+    dist
+        ParticleDistribution instance.
+    bins
+        Number of bins or explicit bin edges, passed to numpy.histogram.
+    range
+        Optional z range passed to numpy.histogram when `bins` is an integer.
+    z_key
+        Quantity key for longitudinal position, usually 'z'.
+    q_key
+        Quantity key for particle charge, usually 'Q'.
+    vz_key
+        Quantity key for longitudinal velocity, usually 'vz'.
+    use_c_approx
+        If True, use I = lambda * c.
+        If False, use the bin-wise charge-weighted mean vz.
+    return_bin_centers
+        If True, return bin centers. Otherwise return bin edges.
+    absolute_charge
+        If True, use abs(Q) for histogramming and return a nonnegative current
+        magnitude. If False, preserve the sign of Q.
+
+    Returns
+    -------
+    z_axis, current
+        z_axis:
+            Bin centers if return_bin_centers=True, otherwise bin edges.
+        current:
+            Current profile in [A], one value per bin.
+
+    Notes
+    -----
+    The current is computed as
+
+        I(z) = lambda(z) * v_z
+
+    where lambda(z) is the line charge density [C/m].
+
+    If `use_c_approx=True`, then
+
+        I(z) = lambda(z) * c
+
+    which is often a good approximation for relativistic beams.
+    """
+    z = np.asarray(dist.get_data(z_key), dtype=float)
+    q = np.asarray(dist.get_data(q_key), dtype=float)
+    vz = np.asarray(dist.get_data(vz_key), dtype=float)
+
+    if absolute_charge:
+        q = np.abs(q)
+
+    charge_hist, edges = np.histogram(z, bins=bins, range=range, weights=q)
+
+    dz = np.diff(edges)
+    if np.any(dz <= 0.0):
+        raise ValueError("Bin edges must be strictly increasing.")
+
+    lambda_z = charge_hist / dz  # [C/m]
+
+    if use_c_approx:
+        v_rep = np.full_like(lambda_z, g_c, dtype=float)
+    else:
+        qvz_hist, _ = np.histogram(z, bins=edges, weights=q * vz)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            v_rep = np.divide(
+                qvz_hist,
+                charge_hist,
+                out=np.zeros_like(qvz_hist, dtype=float),
+                where=charge_hist != 0.0,
+            )
+
+    current = lambda_z * v_rep  # [A]
+
+    if return_bin_centers:
+        z_axis = 0.5 * (edges[:-1] + edges[1:])
+    else:
+        z_axis = edges
+
+    return z_axis, current
+
+
+
+
+
+
+

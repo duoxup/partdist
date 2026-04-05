@@ -841,112 +841,6 @@ def set_linear_chirp(
         inplace=True,
     )
 
-# def set_linear_chirp(
-#     dist: "ParticleDistribution",
-#     slope: float,
-#     *,
-#     intercept: Optional[float] = None,
-#     z_key: str = "z",
-#     pz_key: str = "pz",
-#     center_x: bool = False,
-#     center_y: bool = False,
-#     residual_mode: ResidualMode = "preserve",
-#     residual_scale: float = 1.0,
-#     original_trend: Optional[Union[TrendFitResult, Callable[[ArrayLike], ArrayLike]]] = None,
-#     fit_original_if_missing: bool = True,
-#     fit_bins: int = 100,
-#     fit_weight: Union[None, str, ArrayLike] = None,
-#     fit_stat: Literal["mean", "weighted_mean", "median"] = "weighted_mean",
-#     fit_min_count: int = 1,
-#     fit_min_weight_sum: float = 0.0,
-#     fit_method: Literal["linear", "poly", "spline"] = "spline",
-#     fit_poly_order: int = 1,
-#     fit_spline_smoothing: float = 0.0,
-#     fit_spline_weight: Literal["count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"] = "sqrt_count",
-#     mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
-#     weight_for_centroid: Union[None, str, ArrayLike] = None,
-#     m0: float = g_m0,
-#     q: float = g_e0,
-#     c: float = g_c,
-#     inplace: bool = False,
-# ) -> "ParticleDistribution":
-#     """
-#     Set a linear longitudinal chirp:
-#         pz_target(z) = slope * z + intercept
-
-#     Optional centering controls:
-#     - center_x=True  : use z - <z> in the linear form
-#     - center_y=True  : choose/interpet intercept relative to <pz>
-
-#     More explicitly:
-#     - if center_x=False and center_y=False:
-#           pz_target = slope * z + b
-#     - if center_x=True and center_y=False:
-#           pz_target = slope * (z - z_ref) + b
-#     - if center_x=False and center_y=True:
-#           pz_target = slope * z + pz_ref + b
-#     - if center_x=True and center_y=True:
-#           pz_target = slope * (z - z_ref) + pz_ref + b
-
-#     where b = intercept if provided, else 0.0.
-
-#     Parameters
-#     ----------
-#     slope : float
-#         Linear chirp slope in units of y/x, typically (eV/c)/m for pz(z).
-#     intercept : float, optional
-#         Intercept offset according to the centering convention above.
-#         If None, treated as 0.0.
-#     center_x : bool
-#         Whether to center the x coordinate by its weighted mean.
-#     center_y : bool
-#         Whether to center the y baseline by its weighted mean.
-#     weight_for_centroid : None, str, or array-like
-#         Weight used for <z> and <pz> if centering is enabled.
-
-#     Other parameters follow set_pz_trend(...).
-#     """
-#     n = len(dist)
-#     z = _extract_data(dist, z_key, n_expected=n, dtype=float, name=z_key)
-#     pz = _extract_data(dist, pz_key, n_expected=n, dtype=float, name=pz_key)
-#     w = _get_weight_array(dist, weight_for_centroid, absolute=True)
-#     m = _normalize_mask(mask, n)
-
-#     if np.sum(w[m]) <= 0.0:
-#         raise ValueError("Centering requires strictly positive total selected weight.")
-
-#     z_ref = float(np.sum(w[m] * z[m]) / np.sum(w[m])) if center_x else 0.0
-#     pz_ref = float(np.sum(w[m] * pz[m]) / np.sum(w[m])) if center_y else 0.0
-#     b = 0.0 if intercept is None else float(intercept)
-
-#     def target(z_in: ArrayLike) -> np.ndarray:
-#         z_arr = np.asarray(z_in, dtype=float)
-#         return slope * (z_arr - z_ref) + pz_ref + b
-
-#     return set_pz_trend(
-#         dist,
-#         target,
-#         z_key=z_key,
-#         pz_key=pz_key,
-#         original_trend=original_trend,
-#         fit_original_if_missing=fit_original_if_missing,
-#         fit_bins=fit_bins,
-#         fit_weight=fit_weight,
-#         fit_stat=fit_stat,
-#         fit_min_count=fit_min_count,
-#         fit_min_weight_sum=fit_min_weight_sum,
-#         fit_method=fit_method,
-#         fit_poly_order=fit_poly_order,
-#         fit_spline_smoothing=fit_spline_smoothing,
-#         fit_spline_weight=fit_spline_weight,
-#         residual_mode=residual_mode,
-#         residual_scale=residual_scale,
-#         mask=mask,
-#         m0=m0,
-#         q=q,
-#         c=c,
-#         inplace=inplace,
-#     )
 
 
 def linearize_pz_trend(
@@ -1269,7 +1163,7 @@ def match_twiss_xy(
     alpha_y: float,
     beta_y: float,
     *,
-    weight: Union[None, str, ArrayLike] = None,
+    weight: Union[None, str, ArrayLike] = 'Q',
     mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
     center_before_match: bool = True,
     preserve_centroid: bool = True,

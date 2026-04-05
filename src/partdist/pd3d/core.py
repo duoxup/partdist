@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 from typing import Dict, Mapping, Sequence, Union
 
 import numpy as np
@@ -11,7 +12,7 @@ from ..particle_array_quantity import (
     QuantityDTypeKind,
 )
 
-from .analysis import compute_twiss_plane
+from .analysis import compute_twiss_plane, current_profile_z
 
 
 ArrayLike = Union[float, Sequence[float], np.ndarray]
@@ -80,13 +81,13 @@ class ParticleDistribution:
         "p_abs":              {"unit": "eV/c",   "dtype_kind": "float", "short_name": "p",         "long_name": "momentum magnitude",            "latex_name": r"$|p|$",       "category": "momentum", "is_derived": True},
         "kinetic_energy":     {"unit": "J",      "dtype_kind": "float", "short_name": "Ek",        "long_name": "kinetic energy",                "latex_name": r"$E_k$",       "category": "energy",   "is_derived": True},
         "kinetic_energy_eV":  {"unit": "eV",     "dtype_kind": "float", "short_name": "Ek",        "long_name": "kinetic energy",                "latex_name": r"$E_k$",       "category": "energy",   "is_derived": True},
-        "current_x":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_x_like",  "long_name": "x current-like weight",         "latex_name": r"$Qv_x$",      "category": "current",  "is_derived": True},
-        "current_y":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_y_like",  "long_name": "y current-like weight",         "latex_name": r"$Qv_y$",      "category": "current",  "is_derived": True},
-        "current_z":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_z_like",  "long_name": "z current-like weight",         "latex_name": r"$Qv_z$",      "category": "current",  "is_derived": True},
-        "current_abs":        {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_like",    "long_name": "current-like weight magnitude", "latex_name": r"$|Qv|$",      "category": "current",  "is_derived": True},
-        "current_x_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight", "latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
-        "current_y_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight", "latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
-        "current_z_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight", "latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
+        "current_flux_x":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_x_like",  "long_name": "x current-like weight",         "latex_name": r"$Qv_x$",      "category": "current",  "is_derived": True},
+        "current_flux_y":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_y_like",  "long_name": "y current-like weight",         "latex_name": r"$Qv_y$",      "category": "current",  "is_derived": True},
+        "current_flux_z":          {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_z_like",  "long_name": "z current-like weight",         "latex_name": r"$Qv_z$",      "category": "current",  "is_derived": True},
+        "current_flux_abs":        {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "I_like",    "long_name": "current-like weight magnitude", "latex_name": r"$|Qv|$",      "category": "current",  "is_derived": True},
+        "current_flux_x_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight", "latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
+        "current_flux_y_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight", "latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
+        "current_flux_z_abs":      {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight", "latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
     }
 
     def __init__(
@@ -604,6 +605,12 @@ class ParticleDistribution:
             extras=extras,
         )
 
+    def to_dataframe(self):
+        return pd.DataFrame.from_dict(self.to_dict())
+    
+    def to_ndarray(self):
+        return self.to_dataframe().to_numpy()
+
     def sort_by(self, key: str, *, ascending: bool = True) -> "ParticleDistribution":
         values = self.get_data(key)
         order = np.argsort(values)
@@ -889,6 +896,20 @@ class ParticleDistribution:
     @property 
     def cor_pz(self) -> float: #eV/c non-standard name
         return float(self.covariance('z', 'pz', 'absQ')/self.std('z'))
+    
+    @property
+    def I_peak(self):
+        return np.max(self.current_profile_z_abs)
+
+    #%% profiles
+    @property
+    def current_profile_z(self) -> tuple[np.ndarray, np.ndarray]:
+        return current_profile_z(self, bins=500, absolute_charge=False)
+    
+    @property
+    def current_profile_z_abs(self) -> tuple[np.ndarray, np.ndarray]:
+        return current_profile_z(self, bins=500, absolute_charge=True)
+
 
     #%% legacy properties
     @property
@@ -992,31 +1013,31 @@ class ParticleDistribution:
         return self._calc_kinetic_energy_eV()
 
     @property
-    def current_x(self) -> np.ndarray:
+    def current_flux_x(self) -> np.ndarray:
         return self._calc_current_x()
 
     @property
-    def current_y(self) -> np.ndarray:
+    def current_flux_y(self) -> np.ndarray:
         return self._calc_current_y()
 
     @property
-    def current_z(self) -> np.ndarray:
+    def current_flux_z(self) -> np.ndarray:
         return self._calc_current_z()
 
     @property
-    def current_abs(self) -> np.ndarray:
+    def current_flux_abs(self) -> np.ndarray:
         return self._calc_current_abs()
 
     @property
-    def current_x_abs(self) -> np.ndarray:
+    def current_flux_x_abs(self) -> np.ndarray:
         return self._calc_current_x_abs()
 
     @property
-    def current_y_abs(self) -> np.ndarray:
+    def current_flux_y_abs(self) -> np.ndarray:
         return self._calc_current_y_abs()
 
     @property
-    def current_z_abs(self) -> np.ndarray:
+    def current_flux_z_abs(self) -> np.ndarray:
         return self._calc_current_z_abs()
 
     @property

@@ -184,26 +184,36 @@ def match_twiss_parameters(
 
 # Example usage demonstration
 if __name__ == "__main__":
-    # Target Twiss parameters
-    beta_x_target = 0.2  # m
-    alpha_x_target = 0
-    beta_y_target = 0.2  # m
-    alpha_y_target = -1
+    import os
+    from pathlib import Path
+    import partdist.pd3d.io as io
+    from partdist.pd3d.manipulator import match_twiss_xy
+    workdir = Path('/lustre/fs25/group/pitz/duoxup/THz_ideal_machine/genesis/cluster00000001/case_000959/outputs/')
+    os.chdir(workdir)
     
-    from test_io3d import dist_from_astra as dist
+    dist_fbasename_1 = 'chirped.dist'
+    dist_1 = io.read_astra_distribution(dist_fbasename_1)
+    
+    # Target Twiss parameters
+    beta_x_target = 48.02404448230531  # m
+    alpha_x_target = 0
+    beta_y_target = 0.0012006011120576326  # m
+    alpha_y_target = 0
+    
     
     
     # Apply matching
-    matched_dist = match_twiss_parameters(
-        dist=dist,
+    matched_dist = match_twiss_xy(
+        dist=dist_1,
         beta_x=beta_x_target,
         alpha_x=alpha_x_target,
         beta_y=beta_y_target,
         alpha_y=alpha_y_target,
-        plane="both",
         # reference_energy=1e6,  # 1 MeV
         inplace=False
     )
+    
+    io.write_astra_distribution('test.dist', matched_dist)
     
     print("Twiss parameter matching completed successfully")
     

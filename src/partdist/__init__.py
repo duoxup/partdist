@@ -4,9 +4,9 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0.dev"
     
-import sys as _sys 
+# import sys as _sys 
 
-from . import pd3d
+# from . import pd3d
 
 from .particle_array_quantity import ParticleArrayQuantity
 from .pd3d.core import ParticleDistribution
@@ -21,7 +21,7 @@ from .pd3d.manipulator import (
 
 
 
-_sys.modules[__name__ + '.pd3d'] = pd3d
+# _sys.modules[__name__ + '.pd3d'] = pd3d
 
 
 __all__ = [
