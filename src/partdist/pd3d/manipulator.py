@@ -152,9 +152,9 @@ def _update_quantity_array(
     """
     Update a quantity in a ParticleDistribution.
 
-    For base and extra quantities, this calls dist.update_quantity(key, values).
-    For derived momentum quantities {"px", "py", "pz"}, this converts the full
-    momentum vector back to canonical stored velocities and writes back vx/vy/vz.
+    For base and extra quantities, calls dist.update_quantity(key, values).
+    Derived quantities (other than px/py/pz, which are now base) are not
+    directly writable.
 
     Parameters
     ----------
@@ -191,47 +191,10 @@ def _update_quantity_array(
         out.update_quantity(key, arr)
         return out
 
-    if kind == "derived":
-        if key == "px":
-            return _replace_velocity_from_momentum(
-                out,
-                arr,
-                out.py,
-                out.pz,
-                m0=m0,
-                q=q,
-                c=c,
-                inplace=True,
-            )
-        if key == "py":
-            return _replace_velocity_from_momentum(
-                out,
-                out.px,
-                arr,
-                out.pz,
-                m0=m0,
-                q=q,
-                c=c,
-                inplace=True,
-            )
-        if key == "pz":
-            return _replace_velocity_from_momentum(
-                out,
-                out.px,
-                out.py,
-                arr,
-                m0=m0,
-                q=q,
-                c=c,
-                inplace=True,
-            )
-
-        raise ValueError(
-            f"Derived quantity {key!r} is not writable via manipulator. "
-            f"Only momentum components 'px', 'py', 'pz' are currently supported."
-        )
-
-    raise ValueError(f"Unknown quantity kind for key={key!r}.")
+    raise ValueError(
+        f"Derived quantity {key!r} is not directly writable. "
+        "Update the underlying base quantities (px, py, pz) instead."
+    )
 
 def _weighted_raw_twiss_from_arrays(
     u: np.ndarray,
@@ -997,12 +960,12 @@ def match_twiss_plane(
 ):
     """
     Match one transverse plane to target Twiss parameters using the
-    Courant-Snyder transformation, working directly in velocity slope space.
+    Courant-Snyder transformation, working directly in momentum slope space.
 
     Definitions
     -----------
-    - x plane: u = x,  u' = vx / vz
-    - y plane: u = y,  u' = vy / vz
+    - x plane: u = x,  u' = px / pz
+    - y plane: u = y,  u' = py / pz
 
     Parameters
     ----------
@@ -1026,20 +989,20 @@ def match_twiss_plane(
 
     if plane == "x":
         u = _extract_data(out, "x", n_expected=n, dtype=float, name="x")
-        vp = _extract_data(out, "vx", n_expected=n, dtype=float, name="vx")
+        pp = _extract_data(out, "px", n_expected=n, dtype=float, name="px")
     else:
         u = _extract_data(out, "y", n_expected=n, dtype=float, name="y")
-        vp = _extract_data(out, "vy", n_expected=n, dtype=float, name="vy")
+        pp = _extract_data(out, "py", n_expected=n, dtype=float, name="py")
 
-    vz = _extract_data(out, "vz", n_expected=n, dtype=float, name="vz")
+    pz = _extract_data(out, "pz", n_expected=n, dtype=float, name="pz")
 
     valid = (
         m
         & np.isfinite(u)
-        & np.isfinite(vp)
-        & np.isfinite(vz)
+        & np.isfinite(pp)
+        & np.isfinite(pz)
         & np.isfinite(w)
-        & (np.abs(vz) > 0.0)
+        & (np.abs(pz) > 0.0)
     )
 
     if np.count_nonzero(valid) < 2:
@@ -1047,11 +1010,11 @@ def match_twiss_plane(
     if float(np.sum(w[valid])) <= 0.0:
         raise ValueError("Selected particles must have strictly positive total weight.")
 
-    up = vp / vz
+    up = pp / pz
 
     u_sel = u[valid]
     up_sel = up[valid]
-    vz_sel = vz[valid]
+    pz_sel = pz[valid]
     w_sel = w[valid]
 
     if center_before_match:
@@ -1090,20 +1053,18 @@ def match_twiss_plane(
         u_new_sel = work_u_new
         up_new_sel = work_up_new
 
-    u_new = u.copy()
-    vp_new = vp.copy()
+    u_new  = u.copy()
+    pp_new = pp.copy()
 
-    u_new[valid] = u_new_sel
-    vp_new[valid] = up_new_sel * vz_sel
+    u_new[valid]  = u_new_sel
+    pp_new[valid] = up_new_sel * pz_sel
 
     if plane == "x":
         out.update_quantity("x", u_new)
-        px_new, py_new, pz_new = _velocity_components_to_momentum_evc(vp_new, out.vy, out.vz)
-        return _update_momentum_components(out, px_new, py_new, pz_new, inplace=True)
+        return _update_momentum_components(out, pp_new, out.py, out.pz, inplace=True)
 
     out.update_quantity("y", u_new)
-    px_new, py_new, pz_new = _velocity_components_to_momentum_evc(out.vx, vp_new, out.vz)
-    return _update_momentum_components(out, px_new, py_new, pz_new, inplace=True)
+    return _update_momentum_components(out, out.px, pp_new, out.pz, inplace=True)
 
 
 def match_twiss_x(
@@ -1339,7 +1300,7 @@ def replicate_longitudinally(
     else:
         v_ref = None
 
-    base_keys = ("x", "y", "z", "vx", "vy", "vz", "t", "Q")
+    base_keys = ("x", "y", "z", "px", "py", "pz", "t", "Q")
     extra_keys = [k for k in dist.quantity_keys if dist.quantity_kind(k) == "extra"]
 
     base_data = {k: np.asarray(dist.get_data(k)).reshape(-1) for k in base_keys}
@@ -1412,9 +1373,9 @@ def replicate_longitudinally(
         x=base_concat["x"],
         y=base_concat["y"],
         z=base_concat["z"],
-        vx=base_concat["vx"],
-        vy=base_concat["vy"],
-        vz=base_concat["vz"],
+        px=base_concat["px"],
+        py=base_concat["py"],
+        pz=base_concat["pz"],
         t=base_concat["t"],
         Q=base_concat["Q"],
     )
