@@ -179,48 +179,30 @@ def velocity_to_momentum_evc(
 def _reference_to_distribution(
     ref: AstraReferenceParticle,
     *,
-    m0: float,
     species_key: str,
     status_key: str,
 ) -> ParticleDistribution:
-    vx, vy, vz = momentum_evc_to_velocity(
-        np.array([ref.px]),
-        np.array([ref.py]),
-        np.array([ref.pz]),
-        m0=m0,
-    )
-
     return ParticleDistribution(
         x=np.array([ref.x], dtype=float),
         y=np.array([ref.y], dtype=float),
         z=np.array([ref.z], dtype=float),
-        vx=vx,
-        vy=vy,
-        vz=vz,
+        px=np.array([ref.px], dtype=float),
+        py=np.array([ref.py], dtype=float),
+        pz=np.array([ref.pz], dtype=float),
         t=np.array([ref.t], dtype=float),
         Q=np.array([ref.Q], dtype=float),
         extras={
             species_key: ParticleArrayQuantity(
-                name=species_key,
-                data=np.array([ref.species], dtype=np.int64),
-                unit="",
-                dtype_kind="int",
-                short_name=species_key,
-                long_name="particle species flag",
-                latex_name=species_key,
-                category="flag",
-                is_derived=False,
+                name=species_key, data=np.array([ref.species], dtype=np.int64),
+                unit="", dtype_kind="int", short_name=species_key,
+                long_name="particle species flag", latex_name=species_key,
+                category="flag", is_derived=False,
             ),
             status_key: ParticleArrayQuantity(
-                name=status_key,
-                data=np.array([ref.status], dtype=np.int64),
-                unit="",
-                dtype_kind="int",
-                short_name=status_key,
-                long_name="particle status flag",
-                latex_name=status_key,
-                category="flag",
-                is_derived=False,
+                name=status_key, data=np.array([ref.status], dtype=np.int64),
+                unit="", dtype_kind="int", short_name=status_key,
+                long_name="particle status flag", latex_name=status_key,
+                category="flag", is_derived=False,
             ),
         },
     )
@@ -255,9 +237,9 @@ def _concat_distributions(
         x=np.concatenate([first.x, second.x]),
         y=np.concatenate([first.y, second.y]),
         z=np.concatenate([first.z, second.z]),
-        vx=np.concatenate([first.vx, second.vx]),
-        vy=np.concatenate([first.vy, second.vy]),
-        vz=np.concatenate([first.vz, second.vz]),
+        px=np.concatenate([first.px, second.px]),
+        py=np.concatenate([first.py, second.py]),
+        pz=np.concatenate([first.pz, second.pz]),
         t=np.concatenate([first.t, second.t]),
         Q=np.concatenate([first.Q, second.Q]),
         extras=extras,
@@ -267,7 +249,6 @@ def _concat_distributions(
 def _build_reference_from_distribution(
     dist: ParticleDistribution,
     *,
-    m0: float = g_m0,
     mode: str = "mean",
     weight: str | np.ndarray | None = "absQ",
     reference_time: float = 0.0,
@@ -282,25 +263,16 @@ def _build_reference_from_distribution(
 
     mode
     ----
-    - "mean"  : use weighted means for x, y, z, vx, vy, vz
-    - "zeros" : use zeros for x, y, z, vx, vy, vz
+    - "mean"  : use weighted means for x, y, z, px, py, pz
+    - "zeros" : use zeros for x, y, z, px, py, pz
     """
     if mode == "mean":
-        x0 = dist.mean("x", weight=weight)
-        y0 = dist.mean("y", weight=weight)
-        z0 = dist.mean("z", weight=weight)
-        vx0 = dist.mean("vx", weight=weight)
-        vy0 = dist.mean("vy", weight=weight)
-        vz0 = dist.mean("vz", weight=weight)
-        px0, py0, pz0 = velocity_to_momentum_evc(
-            np.array([vx0]),
-            np.array([vy0]),
-            np.array([vz0]),
-            m0=m0,
-        )
-        px0 = float(px0[0])
-        py0 = float(py0[0])
-        pz0 = float(pz0[0])
+        x0  = dist.mean("x",  weight=weight)
+        y0  = dist.mean("y",  weight=weight)
+        z0  = dist.mean("z",  weight=weight)
+        px0 = dist.mean("px", weight=weight)
+        py0 = dist.mean("py", weight=weight)
+        pz0 = dist.mean("pz", weight=weight)
     elif mode == "zeros":
         x0 = y0 = z0 = px0 = py0 = pz0 = 0.0
     else:
@@ -325,7 +297,6 @@ def read_astra_distribution(
     *,
     include_reference_particle: bool = True,
     return_reference: bool = False,
-    m0: float = g_m0,
     species_key: str = "species",
     status_key: str = "status",
     dtype: type = float,
@@ -345,10 +316,9 @@ def read_astra_distribution(
     Returned ParticleDistribution convention
     ----------------------------------------
     - Quantities are converted to absolute physical values.
-    - Momentum is converted to velocity.
     - Units in memory are:
         x, y, z   : m
-        vx, vy, vz: m/s
+        px, py, pz: eV/c
         t         : s
         Q         : C
 
@@ -359,8 +329,6 @@ def read_astra_distribution(
         in the returned ParticleDistribution. Default is True.
     return_reference
         If True, also return the parsed AstraReferenceParticle.
-    m0
-        Rest mass used for momentum/velocity conversion.
     """
     raw = _loadtxt_2d(filepath, dtype=dtype)
     ref = AstraReferenceParticle.from_raw_row(raw[0])
@@ -373,9 +341,9 @@ def read_astra_distribution(
             x=np.empty(0, dtype=float),
             y=np.empty(0, dtype=float),
             z=np.empty(0, dtype=float),
-            vx=np.empty(0, dtype=float),
-            vy=np.empty(0, dtype=float),
-            vz=np.empty(0, dtype=float),
+            px=np.empty(0, dtype=float),
+            py=np.empty(0, dtype=float),
+            pz=np.empty(0, dtype=float),
             t=np.empty(0, dtype=float),
             Q=np.empty(0, dtype=float),
             extras={
@@ -404,52 +372,34 @@ def read_astra_distribution(
             },
         )
     else:
-        x = data[:, 0] + ref.x
-        y = data[:, 1] + ref.y
-        z = data[:, 2] + ref.z
+        x  = data[:, 0] + ref.x
+        y  = data[:, 1] + ref.y
+        z  = data[:, 2] + ref.z
 
         px = data[:, 3] + ref.px
         py = data[:, 4] + ref.py
         pz = data[:, 5] + ref.pz
-        vx, vy, vz = momentum_evc_to_velocity(px, py, pz, m0=m0)
 
-        t = data[:, 6] * 1.0e-9 + ref.t   # ns -> s, then add reference time
-        Q = data[:, 7] * 1.0e-9           # nC -> C, absolute
+        t  = data[:, 6] * 1.0e-9 + ref.t   # ns -> s, then add reference time
+        Q  = data[:, 7] * 1.0e-9            # nC -> C, absolute
 
         species = np.rint(data[:, 8]).astype(np.int64)
-        status = np.rint(data[:, 9]).astype(np.int64)
+        status  = np.rint(data[:, 9]).astype(np.int64)
 
         real_dist = ParticleDistribution(
-            x=x,
-            y=y,
-            z=z,
-            vx=vx,
-            vy=vy,
-            vz=vz,
-            t=t,
-            Q=Q,
+            x=x, y=y, z=z,
+            px=px, py=py, pz=pz,
+            t=t, Q=Q,
             extras={
                 species_key: ParticleArrayQuantity(
-                    name=species_key,
-                    data=species,
-                    unit="",
-                    dtype_kind="int",
-                    short_name=species_key,
-                    long_name="particle species flag",
-                    latex_name=species_key,
-                    category="flag",
-                    is_derived=False,
+                    name=species_key, data=species, unit="", dtype_kind="int",
+                    short_name=species_key, long_name="particle species flag",
+                    latex_name=species_key, category="flag", is_derived=False,
                 ),
                 status_key: ParticleArrayQuantity(
-                    name=status_key,
-                    data=status,
-                    unit="",
-                    dtype_kind="int",
-                    short_name=status_key,
-                    long_name="particle status flag",
-                    latex_name=status_key,
-                    category="flag",
-                    is_derived=False,
+                    name=status_key, data=status, unit="", dtype_kind="int",
+                    short_name=status_key, long_name="particle status flag",
+                    latex_name=status_key, category="flag", is_derived=False,
                 ),
             },
         )
@@ -457,7 +407,6 @@ def read_astra_distribution(
     if include_reference_particle:
         ref_dist = _reference_to_distribution(
             ref,
-            m0=m0,
             species_key=species_key,
             status_key=status_key,
         )
@@ -475,7 +424,6 @@ def write_astra_distribution(
     reference_particle: AstraReferenceParticle | None = None,
     include_reference_particle: bool = True,
     reference_mode: str = "keep",
-    m0: float = g_m0,
     species_key: str = "species",
     status_key: str = "status",
     default_species: int = 1,
@@ -506,8 +454,6 @@ def write_astra_distribution(
         - "keep"  : error
         - "mean"  : build from weighted centroid
         - "zeros" : build zero reference
-    m0
-        Rest mass used for velocity/momentum conversion.
     """
     n_total = dist.size
 
@@ -521,13 +467,6 @@ def write_astra_distribution(
                     "dist must contain at least one particle when include_reference_particle=True."
                 )
 
-            px0, py0, pz0 = velocity_to_momentum_evc(
-                np.array([dist.vx[0]]),
-                np.array([dist.vy[0]]),
-                np.array([dist.vz[0]]),
-                m0=m0,
-            )
-
             if species_key in dist.extra_quantity_keys:
                 species0 = int(dist.get_data(species_key)[0])
             else:
@@ -539,16 +478,10 @@ def write_astra_distribution(
                 status0 = int(default_status)
 
             ref = AstraReferenceParticle(
-                x=float(dist.x[0]),
-                y=float(dist.y[0]),
-                z=float(dist.z[0]),
-                px=float(px0[0]),
-                py=float(py0[0]),
-                pz=float(pz0[0]),
-                t=float(dist.t[0]),
-                Q=float(dist.Q[0]),
-                species=species0,
-                status=status0,
+                x=float(dist.x[0]),   y=float(dist.y[0]),   z=float(dist.z[0]),
+                px=float(dist.px[0]), py=float(dist.py[0]), pz=float(dist.pz[0]),
+                t=float(dist.t[0]),   Q=float(dist.Q[0]),
+                species=species0,      status=status0,
             )
             dist_particles = dist.slice(slice(1, None))
         else:
@@ -559,7 +492,6 @@ def write_astra_distribution(
                 )
             ref = _build_reference_from_distribution(
                 dist,
-                m0=m0,
                 mode=reference_mode,
                 weight=weight,
                 default_species=default_species,
@@ -590,12 +522,9 @@ def write_astra_distribution(
             f"extra[{status_key!r}] must have shape ({n},), got {status_arr.shape}."
         )
 
-    px, py, pz = velocity_to_momentum_evc(
-        dist_particles.vx,
-        dist_particles.vy,
-        dist_particles.vz,
-        m0=m0,
-    )
+    px = dist_particles.px
+    py = dist_particles.py
+    pz = dist_particles.pz
 
     raw = np.empty((n + 1, ASTRA_N_COLS), dtype=float)
     raw[0, :] = ref.to_raw_row()
