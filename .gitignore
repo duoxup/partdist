@@ -18,4 +18,6 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+tests/data/
+
 .DS_Store

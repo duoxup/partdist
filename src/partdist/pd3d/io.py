@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import numpy as np
 from xtils import g_c, g_m0, g_e0
 
@@ -548,4 +549,184 @@ def write_astra_distribution(
         raw,
         fmt=fmt,
         delimiter=delimiter,
+    )
+
+
+def read_genesis_distribution(
+    filepath: str | Path,
+    *,
+    drop_zero_charge: bool = True,
+) -> ParticleDistribution:
+    """
+    Read a GENESIS .h5 particle distribution file into ParticleDistribution.
+
+    GENESIS .h5 file format (as observed in scan.000.out.par.h5):
+    - Root contains global datasets: slicelength, slicespacing, refposition,
+      beamletsize, one4one, slicecount.
+    - Slice groups named slice000001, slice000002, ... each containing:
+        current: scalar (A)
+        x, y: particle positions (m)
+        gamma: Lorentz factor
+        px, py: dimensionless momentum components (p/(m_e c))
+        theta: phase (rad)
+
+    The longitudinal position z is computed from theta as:
+        z_relative = (theta / (2π) + 0.5) * slicelength
+        z = z_relative + refposition + i * slicespacing
+    where i is the slice index (0‑based).
+
+    The charge per particle in a slice is computed as:
+        Q_slice = current * slicelength / c
+        Q_per_particle = Q_slice / n_particles_in_slice
+
+    Particles from slices with zero current (hence zero charge) are discarded
+    when drop_zero_charge=True (default).
+
+    Parameters
+    ----------
+    filepath
+        Path to the .h5 file.
+    drop_zero_charge
+        If True, discard particles with zero macro charge (from slices with
+        zero current). Default is True.
+
+    Returns
+    -------
+    ParticleDistribution
+        With units:
+            x, y, z: m
+            px, py, pz: eV/c
+            t: s
+            Q: C
+        No extra quantities are added.
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"File not found: {filepath}")
+
+    with h5py.File(filepath, 'r') as f:
+        # Global parameters
+        slicelength = float(f['slicelength'][()].item())  # m
+        slicespacing = float(f['slicespacing'][()].item())  # m
+        refposition = float(f['refposition'][()].item())  # m
+        # beamletsize and one4one are not used here
+
+        # Speed of light
+        c = g_c  # m/s
+
+        # List slice groups (exclude datasets like slicecount, slicelength, slicespacing)
+        slice_keys = [k for k in f.keys() if k.startswith('slice') and isinstance(f[k], h5py.Group)]
+        slice_keys.sort()  # ensure order
+
+        if not slice_keys:
+            raise ValueError(f"No slice groups found in {filepath}")
+
+        if 'slicecount' in f:
+            expected_slices = int(f['slicecount'][()].item())
+            if len(slice_keys) != expected_slices:
+                raise ValueError(
+                    f"Expected {expected_slices} slice groups (from 'slicecount'), "
+                    f"found {len(slice_keys)} in {filepath}"
+                )
+
+        # Particles per slice (assumed constant)
+        first_slice = f[slice_keys[0]]
+        n_per_slice = first_slice['x'].shape[0]
+
+        # Pre‑allocate lists
+        all_x = []
+        all_y = []
+        all_z = []
+        all_px = []
+        all_py = []
+        all_pz = []
+        all_t = []
+        all_Q = []
+
+        for i, sk in enumerate(slice_keys):
+            grp = f[sk]
+            # Current is stored as a 1‑element array
+            current = float(grp['current'][()].item())  # A
+
+            # Charge per particle in this slice
+            Q_slice = current * slicelength / c  # C
+            Q_per_particle = Q_slice / n_per_slice  # C
+
+            if drop_zero_charge and Q_per_particle == 0:
+                continue
+
+            # Particle data
+            x = grp['x'][:]  # m
+            y = grp['y'][:]  # m
+            gamma = grp['gamma'][:]  # dimensionless
+            px_norm = grp['px'][:]  # dimensionless p_x/(m_e c)
+            py_norm = grp['py'][:]  # dimensionless p_y/(m_e c)
+            theta = grp['theta'][:]  # rad
+
+            n_this = len(x)
+            if n_this != n_per_slice:
+                # Recompute charge per particle based on actual count
+                Q_per_particle = Q_slice / n_this if n_this > 0 else 0.0
+
+            # Compute pz from gamma and px, py (all in units of m_e c).
+            # gamma^2 = 1 + px^2 + py^2 + pz^2
+            # Clamp to zero before sqrt to absorb floating‑point rounding errors.
+            # pz is taken as positive (forward-propagating beam assumed).
+            pz_squared = gamma**2 - 1 - px_norm**2 - py_norm**2
+            pz_squared = np.maximum(pz_squared, 0.0)
+            pz_norm = np.sqrt(pz_squared)
+
+            # Convert dimensionless momentum to eV/c
+            # factor_evc = m_e * c^2 / e0 ≈ 510998.946 eV
+            factor_evc = g_m0 * g_c**2 / abs(g_e0)
+            px_evc = px_norm * factor_evc
+            py_evc = py_norm * factor_evc
+            pz_evc = pz_norm * factor_evc
+
+            # Longitudinal position from theta
+            # theta ∈ [-π, π] maps to z_relative ∈ [0, slicelength]
+            z_relative = (theta / (2 * np.pi) + 0.5) * slicelength  # m
+            z = z_relative + refposition + i * slicespacing  # m
+
+            # Time: t ≈ z / c (valid for ultra-relativistic particles, β ≈ 1)
+            t = z / c  # s
+
+            # Charge per particle
+            Q = np.full(n_this, Q_per_particle, dtype=float)
+
+            # Append to lists
+            all_x.append(x)
+            all_y.append(y)
+            all_z.append(z)
+            all_px.append(px_evc)
+            all_py.append(py_evc)
+            all_pz.append(pz_evc)
+            all_t.append(t)
+            all_Q.append(Q)
+
+        if not all_x:
+            # No particles selected
+            empty = np.empty(0, dtype=float)
+            return ParticleDistribution(
+                x=empty, y=empty, z=empty,
+                px=empty, py=empty, pz=empty,
+                t=empty, Q=empty,
+                extras={},
+            )
+
+        # Concatenate
+        x_arr = np.concatenate(all_x)
+        y_arr = np.concatenate(all_y)
+        z_arr = np.concatenate(all_z)
+        px_arr = np.concatenate(all_px)
+        py_arr = np.concatenate(all_py)
+        pz_arr = np.concatenate(all_pz)
+        t_arr = np.concatenate(all_t)
+        Q_arr = np.concatenate(all_Q)
+
+    return ParticleDistribution(
+        x=x_arr, y=y_arr, z=z_arr,
+        px=px_arr, py=py_arr, pz=pz_arr,
+        t=t_arr, Q=Q_arr,
+        extras={},
     )
