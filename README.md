@@ -7,9 +7,11 @@ PartDist is a Python library for storing, manipulating, and analyzing 3D particl
 ### Installation
 
 ```bash
-# Replace [REPOSITORY_URL] with your actual repository URL
-pip install git+[REPOSITORY_URL]
+pip install git+https://github.com/PigDuo/partdist.git
 ```
+
+> **Note:** This package also requires `xtils` (a private dependency not on PyPI).
+> Install it separately before using `partdist`.
 
 ### Minimal Example
 
@@ -104,15 +106,15 @@ dist_matched = match_twiss_xy(
     beta_x=0.2,    # target beta_x [m]
     alpha_y=-1.0,  # target alpha_y
     beta_y=0.2,    # target beta_y [m]
-    weight='Q_abs',  # weight by absolute charge
+    weight='absQ',  # weight by absolute charge
     center_before_match=True,
     preserve_centroid=True
 )
 
 # Verify matched parameters
 from partdist.pd3d.analysis import compute_twiss_plane
-twiss_x = compute_twiss_plane(dist_matched, plane='x', weight='Q_abs')
-twiss_y = compute_twiss_plane(dist_matched, plane='y', weight='Q_abs')
+twiss_x = compute_twiss_plane(dist_matched, plane='x', weight='absQ')
+twiss_y = compute_twiss_plane(dist_matched, plane='y', weight='absQ')
 
 print(f"Matched alpha_x: {twiss_x.alpha:.3f}, beta_x: {twiss_x.beta:.3f} m")
 print(f"Matched alpha_y: {twiss_y.alpha:.3f}, beta_y: {twiss_y.beta:.3f} m")
@@ -164,7 +166,7 @@ from partdist.pd3d.viz import hist2d_pd3d
 import matplotlib.pyplot as plt
 
 # Compute current profile along z
-z_bins, current = current_profile_z(dist, n_bins=100, weight='Q')
+z_bins, current = current_profile_z(dist, bins=100)
 plt.figure()
 plt.plot(z_bins, current)
 plt.xlabel('z [m]')
@@ -172,7 +174,7 @@ plt.ylabel('Current [A]')
 plt.title('Longitudinal Current Profile')
 
 # Create 2D histogram visualization
-fig, ax = hist2d_pd3d(
+fig, ax, *_ = hist2d_pd3d(
     dist,
     x='z', y='pz',
     color_threshold=1e-2,
@@ -183,8 +185,8 @@ ax.set_ylabel('pz [eV/c]')
 ax.set_title('Phase Space Distribution')
 
 # Compute emittance and Twiss parameters
-twiss = compute_twiss_plane(dist, plane='x', weight='Q_abs')
-print(f"ε_x = {twiss.emit:.3e} m·rad, α_x = {twiss.alpha:.3f}, β_x = {twiss.beta:.3f} m")
+twiss = compute_twiss_plane(dist, plane='x', weight='absQ')
+print(f"ε_x = {twiss.geometric_emittance:.3e} m·rad, α_x = {twiss.alpha:.3f}, β_x = {twiss.beta:.3f} m")
 ```
 
 ## API Overview
@@ -199,6 +201,7 @@ print(f"ε_x = {twiss.emit:.3e} m·rad, α_x = {twiss.alpha:.3f}, β_x = {twiss.
 **I/O Operations:**
 - `read_astra_distribution()`: Read ASTRA particle distribution files
 - `write_astra_distribution()`: Write to ASTRA format
+- `read_genesis_distribution()`: Read GENESIS 4 `.h5` particle output files
 
 **Manipulation:**
 - `replicate_longitudinally()`: Create longitudinal copies
@@ -218,8 +221,7 @@ print(f"ε_x = {twiss.emit:.3e} m·rad, α_x = {twiss.alpha:.3f}, β_x = {twiss.
 ### Development Setup
 
 ```bash
-# Clone the repository (replace [REPOSITORY_URL] with your actual URL)
-git clone [REPOSITORY_URL]
+git clone https://github.com/PigDuo/partdist.git
 cd partdist
 
 # Install in development mode
