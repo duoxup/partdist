@@ -9,8 +9,14 @@ except PackageNotFoundError:
 # from . import pd3d
 
 from .particle_array_quantity import ParticleArrayQuantity
-from .pd3d.core import ParticleDistribution
-from .pd3d.io import read_astra_distribution, write_astra_distribution
+from .pd3d.core import ParticleDistribution3D, ParticleDistribution
+from .pdslice.core import SliceDistribution
+from .pd3d.io import (
+    read_astra_distribution,
+    write_astra_distribution,
+    from_ocelot_particle_array,
+    to_ocelot_particle_array,
+)
 
 from .pd3d.manipulator import (
     replicate_longitudinally,
@@ -26,9 +32,13 @@ from .pd3d.manipulator import (
 
 __all__ = [
     'ParticleArrayQuantity',
-    'ParticleDistribution',
+    'ParticleDistribution3D',
+    'ParticleDistribution',  # backward-compatible alias
+    'SliceDistribution',
     'read_astra_distribution',
     'write_astra_distribution',
+    'from_ocelot_particle_array',
+    'to_ocelot_particle_array',
     'replicate_longitudinally',
     'multiply_longitudinal_profile',
     'set_linear_chirp',

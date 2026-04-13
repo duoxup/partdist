@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import h5py
 import numpy as np
@@ -550,6 +551,143 @@ def write_astra_distribution(
         fmt=fmt,
         delimiter=delimiter,
     )
+
+
+def from_ocelot_particle_array(pa: "Any") -> ParticleDistribution:
+    """
+    Convert an ocelot ``ParticleArray`` to a :class:`ParticleDistribution`.
+
+    ocelot ``ParticleArray`` coordinate layout
+    -------------------------------------------
+    ``rparticles[0]``: *x*  — horizontal position [m]
+    ``rparticles[1]``: *x'* = px/p₀ — horizontal divergence [rad]
+    ``rparticles[2]``: *y*  — vertical position [m]
+    ``rparticles[3]``: *y'* = py/p₀ — vertical divergence [rad]
+    ``rparticles[4]``: *τ*  = t − t_ref — time offset [s]
+                       (positive → particle is *behind* the reference)
+    ``rparticles[5]``: *δ*  = (E − E₀)/(p₀c) — relative energy deviation
+    ``q_array``      : macro-particle charge [C]
+    ``E``            : reference energy [GeV]
+    ``s``            : reference position along the beamline [m]
+
+    Returned :class:`ParticleDistribution` conventions
+    ---------------------------------------------------
+    ``x``, ``y``    : transverse positions [m]  (unchanged)
+    ``z``           : ``pa.s − c·τ``  [m]
+    ``px``, ``py``  : transverse momenta [eV/c]  = x′/y′ × p₀c
+    ``pz``          : longitudinal momentum [eV/c]  (from total momentum)
+    ``t``           : ``pa.s/c + τ``  [s]
+    ``Q``           : ``pa.q_array``  [C]
+    """
+    m_e_eV: float = g_m0 * g_c ** 2 / abs(g_e0)   # electron rest energy [eV]
+
+    E0_GeV: float = float(pa.E)
+    p0c_GeV: float = float(pa.p0c)       # sqrt(E² − mₑ²) in GeV
+    p0c_eV: float = p0c_GeV * 1e9        # [eV]
+
+    x   = np.array(pa.rparticles[0], dtype=float)
+    xp  = np.array(pa.rparticles[1], dtype=float)  # x' = px_perp / p₀
+    y   = np.array(pa.rparticles[2], dtype=float)
+    yp  = np.array(pa.rparticles[3], dtype=float)  # y' = py_perp / p₀
+    tau = np.array(pa.rparticles[4], dtype=float)  # time offset  [s]
+    dp  = np.array(pa.rparticles[5], dtype=float)  # δ = (E−E₀)/p₀c
+
+    # Transverse momenta [eV/c]
+    px_evc = xp * p0c_eV
+    py_evc = yp * p0c_eV
+
+    # Total energy and longitudinal momentum
+    E_eV = (dp * p0c_GeV + E0_GeV) * 1e9           # [eV]
+    p_abs_sq = np.maximum(E_eV ** 2 - m_e_eV ** 2, 0.0)
+    pz_evc = np.sqrt(np.maximum(p_abs_sq - px_evc ** 2 - py_evc ** 2, 0.0))
+
+    # Longitudinal position and time
+    z = pa.s - g_c * tau          # [m]
+    t = pa.s / g_c + tau          # [s]
+
+    return ParticleDistribution(
+        x=x, y=y, z=z,
+        px=px_evc, py=py_evc, pz=pz_evc,
+        t=t, Q=np.array(pa.q_array, dtype=float),
+    )
+
+
+def to_ocelot_particle_array(
+    dist: ParticleDistribution,
+    *,
+    s: float = 0.0,
+) -> "Any":
+    """
+    Convert a :class:`ParticleDistribution` to an ocelot ``ParticleArray``.
+
+    The *reference particle* is defined as the charge-weighted centroid of the
+    distribution.  Its reference position along the beamline is ``s``
+    (default 0).
+
+    ocelot ``ParticleArray`` conventions used
+    -----------------------------------------
+    ``rparticles[0]``: *x*  [m]  (unchanged)
+    ``rparticles[1]``: *x'* = px / p₀c  [rad]
+    ``rparticles[2]``: *y*  [m]  (unchanged)
+    ``rparticles[3]``: *y'* = py / p₀c  [rad]
+    ``rparticles[4]``: *τ*  = t − s/c  [s]  (positive → behind reference)
+    ``rparticles[5]``: *δ*  = (E − E₀) / p₀c  (dimensionless)
+    ``q_array``      : macro-particle charge [C]
+    ``E``            : charge-weighted mean energy [GeV]
+    ``s``            : ``s`` parameter [m]
+
+    Parameters
+    ----------
+    dist
+        Source particle distribution.
+    s
+        Reference position along the beamline [m].  Typically set to the
+        longitudinal position at which the distribution was recorded.
+        Default is 0.
+    """
+    from ocelot.cpbd.beam import ParticleArray
+
+    m_e_eV: float = g_m0 * g_c ** 2 / abs(g_e0)
+
+    px_evc = np.asarray(dist.px, dtype=float)
+    py_evc = np.asarray(dist.py, dtype=float)
+    pz_evc = np.asarray(dist.pz, dtype=float)
+
+    # Total energy per particle [eV]
+    E_eV = np.sqrt(px_evc ** 2 + py_evc ** 2 + pz_evc ** 2 + m_e_eV ** 2)
+
+    # Charge-weighted reference energy
+    weights = np.abs(np.asarray(dist.Q, dtype=float))
+    total_weight = float(weights.sum())
+    if total_weight > 0.0:
+        E0_eV = float(np.dot(weights, E_eV) / total_weight)
+        t_ref_dist = float(np.dot(weights, np.asarray(dist.t, dtype=float)) / total_weight)
+    else:
+        E0_eV = float(np.mean(E_eV))
+        t_ref_dist = float(np.mean(dist.t))
+
+    E0_GeV = E0_eV * 1e-9
+    p0c_eV = float(np.sqrt(max(E0_eV ** 2 - m_e_eV ** 2, 0.0)))
+
+    # ocelot phase-space coordinates
+    xp = px_evc / p0c_eV          # x' [rad]
+    yp = py_evc / p0c_eV          # y' [rad]
+    tau = np.asarray(dist.t, dtype=float) - float(s) / g_c   # [s]
+    delta = (E_eV - E0_eV) / p0c_eV                          # δ
+
+    n = dist.size
+    pa = ParticleArray(n=n)
+    pa.rparticles[0] = np.asarray(dist.x, dtype=float)
+    pa.rparticles[1] = xp
+    pa.rparticles[2] = np.asarray(dist.y, dtype=float)
+    pa.rparticles[3] = yp
+    pa.rparticles[4] = tau
+    pa.rparticles[5] = delta
+    pa.q_array[:] = np.asarray(dist.Q, dtype=float)
+    pa.E = E0_GeV
+    pa.s = float(s)
+
+    return pa
 
 
 def read_genesis_distribution(
