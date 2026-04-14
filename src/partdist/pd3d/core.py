@@ -32,7 +32,7 @@ def _as_1d_float_array(a: ArrayLike, name: str) -> np.ndarray:
     return arr
 
 
-class ParticleDistribution:
+class ParticleDistribution3D:
     """
     Fully object-based particle distribution container.
 
@@ -154,7 +154,7 @@ class ParticleDistribution:
         t: ArrayLike,
         Q: ArrayLike | None = None,
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         x = _as_1d_float_array(x, "x")
         n = len(x)
         if Q is None:
@@ -162,7 +162,7 @@ class ParticleDistribution:
         return cls(x=x, y=y, z=z, px=px, py=py, pz=pz, t=t, Q=Q, extras=extras)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, ArrayLike]) -> "ParticleDistribution":
+    def from_dict(cls, data: Mapping[str, ArrayLike]) -> "ParticleDistribution3D":
         required = ("x", "y", "z", "px", "py", "pz", "t", "Q")
         missing = [k for k in required if k not in data]
         if missing:
@@ -288,7 +288,7 @@ class ParticleDistribution:
         is_discrete: bool | None = None,
         preferred_scale: str = "linear",
         inplace: bool = True,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         """
         Add a new stored quantity.
     
@@ -340,7 +340,7 @@ class ParticleDistribution:
         *,
         update_meta: bool = False,
         inplace: bool = True,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         """
         Update an existing stored quantity.
     
@@ -418,7 +418,7 @@ class ParticleDistribution:
         return out
     
     
-    def drop_quantity(self, key: str, *, inplace: bool = True) -> "ParticleDistribution":
+    def drop_quantity(self, key: str, *, inplace: bool = True) -> "ParticleDistribution3D":
         """
         Drop an existing extra quantity.
     
@@ -453,7 +453,7 @@ class ParticleDistribution:
         is_discrete: bool | None = None,
         preferred_scale: str = "linear",
         inplace: bool = True,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         """
         Add a new extra quantity.
     
@@ -487,7 +487,7 @@ class ParticleDistribution:
         *,
         update_meta: bool = False,
         inplace: bool = True,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         """
         Update an existing extra quantity.
         """
@@ -506,7 +506,7 @@ class ParticleDistribution:
         )
     
     
-    def drop_extra(self, key: str, *, inplace: bool = True) -> "ParticleDistribution":
+    def drop_extra(self, key: str, *, inplace: bool = True) -> "ParticleDistribution3D":
         """
         Drop an existing extra quantity.
         """
@@ -520,9 +520,9 @@ class ParticleDistribution:
         return self.drop_quantity(key, inplace=inplace)
     
 
-    def copy(self) -> "ParticleDistribution":
+    def copy(self) -> "ParticleDistribution3D":
         extras = {k: q.copy() for k, q in self._quantities.items() if k not in self._BASE_SPECS}
-        return ParticleDistribution(
+        return ParticleDistribution3D(
             x=self.x.copy(),
             y=self.y.copy(),
             z=self.z.copy(),
@@ -540,7 +540,7 @@ class ParticleDistribution:
         data: ArrayLike,
         *,
         inplace: bool = False,
-    ) -> "ParticleDistribution":
+    ) -> "ParticleDistribution3D":
         """
         Update only the data array of an existing quantity.
         """
@@ -570,7 +570,7 @@ class ParticleDistribution:
 
         return out
 
-    def slice(self, mask: np.ndarray | slice | ArrayLike) -> "ParticleDistribution":
+    def slice(self, mask: np.ndarray | slice | ArrayLike) -> "ParticleDistribution3D":
         extras = {}
         for key in self.extra_quantity_keys:
             q = self.get_quantity(key)
@@ -588,7 +588,7 @@ class ParticleDistribution:
                 preferred_scale=q.preferred_scale,
             )
 
-        return ParticleDistribution(
+        return ParticleDistribution3D(
             x=self.x[mask], y=self.y[mask], z=self.z[mask],
             px=self.px[mask], py=self.py[mask], pz=self.pz[mask],
             t=self.t[mask], Q=self.Q[mask],
@@ -601,7 +601,7 @@ class ParticleDistribution:
     def to_ndarray(self):
         return self.to_dataframe().to_numpy()
 
-    def sort_by(self, key: str, *, ascending: bool = True) -> "ParticleDistribution":
+    def sort_by(self, key: str, *, ascending: bool = True) -> "ParticleDistribution3D":
         values = self.get_data(key)
         order = np.argsort(values)
         if not ascending:
@@ -845,12 +845,23 @@ class ParticleDistribution:
         return float(np.sqrt(var_y * var_yp - cov_yyp**2))
     
     @property
-    def Nemit_x(self) -> float:
-        return float(self.beta0*self.gamma0*self.emit_x)
-    
+    def emit_z(self) -> float:
+        var_z = self.var('z')
+        var_pz = self.var('pz')
+        cov_zpz = self.covariance('z', 'pz')
+        return float(np.sqrt(var_z * var_pz - cov_zpz**2))
+
     @property
-    def Nemit_y(self) -> float:
+    def nemit_x(self) -> float:
+        return float(self.beta0*self.gamma0*self.emit_x)
+
+    @property
+    def nemit_y(self) -> float:
         return float(self.beta0*self.gamma0*self.emit_y)
+
+    @property
+    def nemit_z(self) -> float:
+        return float(self.beta0*self.gamma0*self.emit_z)
     
     @property
     def alpha_x(self) -> float:
@@ -1047,3 +1058,7 @@ class ParticleDistribution:
     @property
     def pid(self) -> np.ndarray:
         return self.id
+
+
+# Backward-compatible alias — will be removed in a future version.
+ParticleDistribution = ParticleDistribution3D
