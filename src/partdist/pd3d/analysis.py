@@ -150,6 +150,30 @@ class TrendFitResult:
 
 
 @dataclass(frozen=True)
+class LongitudinalLinearityResult:
+    """
+    Result of longitudinal phase-space linearity analysis.
+
+    Attributes
+    ----------
+    f_nonlinear : float
+        Nonlinear fraction: weighted RMS of the bin-level residuals from the
+        linear chirp fit divided by the weighted std of the pz profile.
+        Range [0, 1]; 0 = perfectly linear, 1 = entirely nonlinear.
+    r_squared : float
+        Coefficient of determination equivalent: ``1 - f_nonlinear**2``.
+    profile : BinnedProfileResult
+        Binned pz(z) profile used for the analysis.
+    linear_trend : TrendFitResult
+        Fitted linear chirp trend.
+    """
+    f_nonlinear: float
+    r_squared: float
+    profile: "BinnedProfileResult"
+    linear_trend: "TrendFitResult"
+
+
+@dataclass(frozen=True)
 class ResidualAnalysisResult:
     """
     Result of residual analysis for y relative to a fitted trend f(x).
@@ -1086,6 +1110,95 @@ def analyze_longitudinal_trend(
         "trend": trend,
         "residuals": residuals,
     }
+
+def compute_longitudinal_linearity(
+    dist: "ParticleDistribution",
+    *,
+    z_key: str = "z",
+    pz_key: str = "pz",
+    bins: int = 100,
+    weight: Union[None, str, ArrayLike] = None,
+    stat: StatMethod = "weighted_mean",
+    min_count: int = 1,
+    min_weight_sum: float = 0.0,
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+) -> LongitudinalLinearityResult:
+    """
+    Quantify the linearity of the longitudinal phase space pz(z).
+
+    The metric is based on the binned chirp profile, so it reflects the
+    nonlinearity of the chirp itself and is independent of slice energy spread.
+
+    The nonlinear fraction is defined as::
+
+        f_nonlinear = RMS_w(pz_bin - linear_fit(z_bin)) / std_w(pz_bin)
+
+    where RMS_w and std_w denote charge-weighted RMS and standard deviation
+    over valid bins. A perfectly linear chirp gives f_nonlinear = 0;
+    a chirp with no linear component gives f_nonlinear = 1.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    z_key : str
+        Quantity key for longitudinal position.
+    pz_key : str
+        Quantity key for longitudinal momentum.
+    bins : int
+        Number of bins for the pz(z) profile.
+    weight : None, str, or array-like
+        Particle weights for the binned profile.
+    stat : {"mean", "weighted_mean", "median"}
+        Per-bin statistic.
+    min_count : int
+        Minimum particle count for a bin to be considered valid.
+    min_weight_sum : float
+        Minimum total weight for a bin to be considered valid.
+    mask : array-like of bool, optional
+        Particle mask.
+
+    Returns
+    -------
+    LongitudinalLinearityResult
+        Contains f_nonlinear, r_squared, the binned profile, and the fitted
+        linear trend.
+    """
+    profile = compute_binned_profile(
+        dist,
+        z_key,
+        pz_key,
+        bins=bins,
+        weight=weight,
+        stat=stat,
+        min_count=min_count,
+        min_weight_sum=min_weight_sum,
+        mask=mask,
+    )
+
+    linear_trend = fit_trend_from_profile(profile, method="linear")
+
+    x_valid = profile.x_valid
+    y_valid = profile.y_valid
+    w_valid = profile.weight_sum[profile.valid_mask]
+
+    residuals = y_valid - linear_trend(x_valid)
+
+    sigma_nonlinear = _weighted_rms(residuals, w_valid)
+    sigma_total = _weighted_std(y_valid, w_valid)
+
+    if sigma_total == 0.0:
+        raise ValueError("pz profile has zero spread; cannot compute linearity metric.")
+
+    f_nonlinear = float(sigma_nonlinear / sigma_total)
+
+    return LongitudinalLinearityResult(
+        f_nonlinear=f_nonlinear,
+        r_squared=float(1.0 - f_nonlinear**2),
+        profile=profile,
+        linear_trend=linear_trend,
+    )
+
 
 def _compute_charge_histogram(
     z: np.ndarray,
