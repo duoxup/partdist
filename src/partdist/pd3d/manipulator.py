@@ -1513,6 +1513,328 @@ def multiply_longitudinal_profile(
     return out
 
 
+def center_beam(
+    dist: "ParticleDistribution",
+    *,
+    x_key: str = "x",
+    y_key: str = "y",
+    z_key: str = "z",
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Shift the beam so that its charge-weighted centroid is at (0, 0, 0).
+
+    Each spatial coordinate is shifted by subtracting its charge-weighted mean.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    x_key, y_key, z_key : str
+        Quantity keys for the three spatial coordinates.
+    weight : None, str, or array-like
+        Particle weights. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Distribution with charge-weighted centroid shifted to the origin.
+    """
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    w = _get_weight_array(out, weight, absolute=True)
+    for key in (x_key, y_key, z_key):
+        arr = _extract_data(out, key, n_expected=n, dtype=float, name=key)
+        out.update_quantity(key, arr - _weighted_mean_1d(arr, w))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Transport matrix transformations
+# ---------------------------------------------------------------------------
+
+def _apply_transport_matrix_core(
+    out: "ParticleDistribution",
+    M6: np.ndarray,
+    w: np.ndarray,
+) -> "ParticleDistribution":
+    """
+    Apply a 6×6 transport matrix to the state-vector deviations.
+
+    The state vector is u = (x, x', y, y', z, δ) where:
+        x' = px / |p|,  y' = py / |p|
+        δ  = (|p| - p_ref) / p_ref,  p_ref = weighted mean of |p|
+
+    The matrix acts on per-particle deviations from the weighted centroid::
+
+        Δu_new = M6 @ Δu,    u_new = u_centroid + Δu_new
+
+    After the transformation the new momenta are reconstructed as::
+
+        |p|_new = p_ref * (1 + δ_new)
+        px_new  = |p|_new * x'_new
+        py_new  = |p|_new * y'_new
+        pz_new  = sqrt(|p|_new² - px_new² - py_new²)  [sign preserved]
+
+    Modifies `out` in-place; the caller is responsible for copying first.
+    """
+    p_abs = out.p_abs
+    p_ref = float(np.average(p_abs, weights=w))
+
+    px = out._quantities["px"].data.copy()
+    py = out._quantities["py"].data.copy()
+    pz = out._quantities["pz"].data.copy()
+    x  = out._quantities["x"].data.copy()
+    y  = out._quantities["y"].data.copy()
+    z  = out._quantities["z"].data.copy()
+
+    xp    = px / p_abs
+    yp    = py / p_abs
+    delta = (p_abs - p_ref) / p_ref
+
+    state = np.stack([x, xp, y, yp, z, delta])          # (6, n)
+    centroid = np.average(state, weights=w, axis=1, keepdims=True)  # (6, 1)
+    state_new = centroid + M6 @ (state - centroid)
+
+    x_new, xp_new, y_new, yp_new, z_new, delta_new = state_new
+
+    p_abs_new = p_ref * (1.0 + delta_new)
+    px_new    = p_abs_new * xp_new
+    py_new    = p_abs_new * yp_new
+    pz_sq     = p_abs_new**2 - px_new**2 - py_new**2
+
+    if np.any(pz_sq < 0.0):
+        raise ValueError(
+            "Transport matrix produces an unphysical state: transverse momentum "
+            "exceeds total momentum for at least one particle."
+        )
+
+    pz_new = np.copysign(np.sqrt(pz_sq), pz)
+
+    out.update_quantity("x",  x_new)
+    out.update_quantity("y",  y_new)
+    out.update_quantity("z",  z_new)
+    out.update_quantity("px", px_new)
+    out.update_quantity("py", py_new)
+    out.update_quantity("pz", pz_new)
+    return out
+
+
+def apply_matrix_x(
+    dist: "ParticleDistribution",
+    M: np.ndarray,
+    *,
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a 2×2 transport matrix to the horizontal phase space (x, x').
+
+    The matrix acts on deviations from the charge-weighted centroid.
+    y, y', z, and δ are left unchanged.
+
+    State vector convention and momentum reconstruction are described in
+    :func:`_apply_transport_matrix_core`.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    M : array-like, shape (2, 2)
+        Transport matrix acting on (x, x').
+    weight : None, str, or array-like
+        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Transformed distribution.
+    """
+    M = np.asarray(M, dtype=float)
+    if M.shape != (2, 2):
+        raise ValueError(f"M must be a 2×2 matrix, got shape {M.shape}.")
+    M6 = np.eye(6)
+    M6[np.ix_([0, 1], [0, 1])] = M
+    out = _copy_or_inplace(dist, inplace=inplace)
+    return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
+
+
+def apply_matrix_y(
+    dist: "ParticleDistribution",
+    M: np.ndarray,
+    *,
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a 2×2 transport matrix to the vertical phase space (y, y').
+
+    The matrix acts on deviations from the charge-weighted centroid.
+    x, x', z, and δ are left unchanged.
+
+    State vector convention and momentum reconstruction are described in
+    :func:`_apply_transport_matrix_core`.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    M : array-like, shape (2, 2)
+        Transport matrix acting on (y, y').
+    weight : None, str, or array-like
+        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Transformed distribution.
+    """
+    M = np.asarray(M, dtype=float)
+    if M.shape != (2, 2):
+        raise ValueError(f"M must be a 2×2 matrix, got shape {M.shape}.")
+    M6 = np.eye(6)
+    M6[np.ix_([2, 3], [2, 3])] = M
+    out = _copy_or_inplace(dist, inplace=inplace)
+    return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
+
+
+def apply_matrix_z(
+    dist: "ParticleDistribution",
+    M: np.ndarray,
+    *,
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a 2×2 transport matrix to the longitudinal phase space (z, δ).
+
+    The matrix acts on deviations from the charge-weighted centroid.
+    x, x', y, and y' are left unchanged.
+
+    State vector convention and momentum reconstruction are described in
+    :func:`_apply_transport_matrix_core`.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    M : array-like, shape (2, 2)
+        Transport matrix acting on (z, δ).
+    weight : None, str, or array-like
+        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Transformed distribution.
+    """
+    M = np.asarray(M, dtype=float)
+    if M.shape != (2, 2):
+        raise ValueError(f"M must be a 2×2 matrix, got shape {M.shape}.")
+    M6 = np.eye(6)
+    M6[np.ix_([4, 5], [4, 5])] = M
+    out = _copy_or_inplace(dist, inplace=inplace)
+    return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
+
+
+def apply_matrix_xy(
+    dist: "ParticleDistribution",
+    M: np.ndarray,
+    *,
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a 4×4 transport matrix to the transverse phase space (x, x', y, y').
+
+    The matrix acts on deviations from the charge-weighted centroid.
+    z and δ are left unchanged.
+
+    State vector convention and momentum reconstruction are described in
+    :func:`_apply_transport_matrix_core`.
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    M : array-like, shape (4, 4)
+        Transport matrix acting on (x, x', y, y').
+    weight : None, str, or array-like
+        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Transformed distribution.
+    """
+    M = np.asarray(M, dtype=float)
+    if M.shape != (4, 4):
+        raise ValueError(f"M must be a 4×4 matrix, got shape {M.shape}.")
+    M6 = np.eye(6)
+    M6[np.ix_([0, 1, 2, 3], [0, 1, 2, 3])] = M
+    out = _copy_or_inplace(dist, inplace=inplace)
+    return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
+
+
+def apply_matrix_6d(
+    dist: "ParticleDistribution",
+    M: np.ndarray,
+    *,
+    weight: Union[None, str, ArrayLike] = "absQ",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a 6×6 transport matrix to the full phase space (x, x', y, y', z, δ).
+
+    The matrix acts on deviations from the charge-weighted centroid::
+
+        Δu_new = M @ Δu,    u_new = u_centroid + Δu_new
+
+    where u = (x, x', y, y', z, δ) and:
+        x' = px / |p|,  y' = py / |p|
+        δ  = (|p| - p_ref) / p_ref,  p_ref = weighted mean of |p|
+
+    After the transformation the momenta are reconstructed as::
+
+        |p|_new = p_ref * (1 + δ_new)
+        px_new  = |p|_new * x'_new
+        py_new  = |p|_new * y'_new
+        pz_new  = sqrt(|p|_new² - px_new² - py_new²)  [sign of pz preserved]
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    M : array-like, shape (6, 6)
+        Transport matrix acting on (x, x', y, y', z, δ).
+    weight : None, str, or array-like
+        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Transformed distribution.
+    """
+    M = np.asarray(M, dtype=float)
+    if M.shape != (6, 6):
+        raise ValueError(f"M must be a 6×6 matrix, got shape {M.shape}.")
+    out = _copy_or_inplace(dist, inplace=inplace)
+    return _apply_transport_matrix_core(out, M, _get_weight_array(out, weight, absolute=True))
+
+
 
 
 

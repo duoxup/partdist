@@ -77,6 +77,7 @@ class ParticleDistribution3D:
         "gamma":              {"unit": "",       "dtype_kind": "float", "short_name": "gamma",     "long_name": "Lorentz factor",                "latex_name": r"$\gamma$",    "category": "velocity", "is_derived": True},
         "xp":                 {"unit": "rad",    "dtype_kind": "float", "short_name": "xp",        "long_name": "horizontal normlized angle",    "latex_name": r"$x'$",        "category": "other",    "is_derived": True},
         "yp":                 {"unit": "rad",    "dtype_kind": "float", "short_name": "yp",        "long_name": "vertical normlized angle",      "latex_name": r"$y'$",        "category": "other",    "is_derived": True},
+        "delta":              {"unit": "",       "dtype_kind": "float", "short_name": "delta",     "long_name": "relative momentum deviation",   "latex_name": r"$\delta$",    "category": "momentum", "is_derived": True},
         "p_abs_si":           {"unit": "kg*m/s", "dtype_kind": "float", "short_name": "p",         "long_name": "momentum magnitude (SI)",       "latex_name": r"$|p|$",       "category": "momentum", "is_derived": True},
         "p_abs":              {"unit": "eV/c",   "dtype_kind": "float", "short_name": "p",         "long_name": "momentum magnitude",            "latex_name": r"$|p|$",       "category": "momentum", "is_derived": True},
         "kinetic_energy":     {"unit": "J",      "dtype_kind": "float", "short_name": "Ek",        "long_name": "kinetic energy",                "latex_name": r"$E_k$",       "category": "energy",   "is_derived": True},
@@ -770,6 +771,11 @@ class ParticleDistribution3D:
     def _calc_yp(self) -> np.ndarray:
         return self._quantities["py"].data / self.p_abs
 
+    def _calc_delta(self) -> np.ndarray:
+        p = self.p_abs
+        p_ref = float(np.average(p, weights=np.abs(self._quantities["Q"].data)))
+        return (p - p_ref) / p_ref
+
     def _calc_Q_abs(self) -> np.ndarray:
         return np.abs(self.Q)
 
@@ -906,16 +912,12 @@ class ParticleDistribution3D:
     
     @property
     def I_peak(self):
-        return np.max(self.current_profile_z_abs)
+        return np.max(self.current_profile_z[1])
 
     #%% profiles
     @property
     def current_profile_z(self) -> tuple[np.ndarray, np.ndarray]:
-        return current_profile_z(self, bins=500, absolute_charge=False)
-    
-    @property
-    def current_profile_z_abs(self) -> tuple[np.ndarray, np.ndarray]:
-        return current_profile_z(self, bins=500, absolute_charge=True)
+        return current_profile_z(self, bins=500)
 
 
     #%% legacy properties
@@ -1002,6 +1004,10 @@ class ParticleDistribution3D:
     @property
     def yp(self) -> np.ndarray:
         return self._calc_yp()
+
+    @property
+    def delta(self) -> np.ndarray:
+        return self._calc_delta()
 
     @property
     def p_abs_si(self) -> np.ndarray:
