@@ -1152,11 +1152,13 @@ def compute_longitudinal_linearity(
 
     The nonlinear fraction is defined as::
 
-        f_nonlinear = RMS_w(pz_bin - linear_fit(z_bin)) / std_w(pz_bin)
+        f_nonlinear = RMS_w(pz_bin - linear_fit(z_bin)) / std_w_particles(pz)
 
-    where RMS_w and std_w denote charge-weighted RMS and standard deviation
-    over valid bins. A perfectly linear chirp gives f_nonlinear = 0;
-    a chirp with no linear component gives f_nonlinear = 1.
+    where the numerator is the charge-weighted RMS of bin-level residuals from
+    a linear fit, and the denominator is the charge-weighted standard deviation
+    of the per-particle pz (total energy spread). This normalization remains
+    well-defined even when the chirp slope is zero (flat phase space), in which
+    case the residuals are near zero and f_nonlinear ≈ 0.
 
     Parameters
     ----------
@@ -1206,10 +1208,15 @@ def compute_longitudinal_linearity(
     residuals = y_valid - linear_trend(x_valid)
 
     sigma_nonlinear = _weighted_rms(residuals, w_valid)
-    sigma_total = _weighted_std(y_valid, w_valid)
+
+    pz_arr = _extract_data(dist, pz_key, n_expected=len(dist), dtype=float, name=pz_key)
+    w_arr = _get_weight_array(dist, weight, absolute=True)
+    m_arr = _normalize_mask(mask, len(dist))
+    valid_particles = np.isfinite(pz_arr) & np.isfinite(w_arr) & m_arr
+    sigma_total = _weighted_std(pz_arr[valid_particles], w_arr[valid_particles])
 
     if sigma_total == 0.0:
-        raise ValueError("pz profile has zero spread; cannot compute linearity metric.")
+        raise ValueError("pz has zero spread; cannot compute linearity metric.")
 
     f_nonlinear = float(sigma_nonlinear / sigma_total)
 
