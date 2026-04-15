@@ -609,16 +609,11 @@ class ParticleDistribution3D:
             order = order[::-1]
         return self.slice(order)
 
-    def _get_weights(self, weight: str | np.ndarray | None = "absQ") -> np.ndarray:
+    def _get_weights(self, weight: str | np.ndarray | None = "Q_abs") -> np.ndarray:
         if weight is None:
             w = np.ones(self.size, dtype=float)
         elif isinstance(weight, str):
-            if weight == "Q":
-                w = np.asarray(self.Q, dtype=float)
-            elif weight == "absQ":
-                w = np.abs(np.asarray(self.Q, dtype=float))
-            else:
-                w = np.asarray(self.get_data(weight), dtype=float)
+            w = np.asarray(self.get_data(weight), dtype=float)
         else:
             w = np.asarray(weight, dtype=float)
 
@@ -626,7 +621,7 @@ class ParticleDistribution3D:
             raise ValueError(f"Weights must be a 1D array of length {self.size}.")
         return w
 
-    def mean(self, key: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def mean(self, key: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         x = np.asarray(self.get_data(key), dtype=float)
         w = self._get_weights(weight)
         wsum = np.sum(w)
@@ -634,7 +629,7 @@ class ParticleDistribution3D:
             raise ValueError("Sum of weights is zero.")
         return float(np.sum(w * x) / wsum)
 
-    def var(self, key: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def var(self, key: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         x = np.asarray(self.get_data(key), dtype=float)
         w = self._get_weights(weight)
         mu = self.mean(key, weight=weight)
@@ -643,10 +638,10 @@ class ParticleDistribution3D:
             raise ValueError("Sum of weights is zero.")
         return float(np.sum(w * (x - mu) ** 2) / wsum)
 
-    def std(self, key: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def std(self, key: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         return float(np.sqrt(self.var(key, weight=weight)))
 
-    def rms(self, key: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def rms(self, key: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         x = np.asarray(self.get_data(key), dtype=float)
         w = self._get_weights(weight)
         wsum = np.sum(w)
@@ -654,7 +649,7 @@ class ParticleDistribution3D:
             raise ValueError("Sum of weights is zero.")
         return float(np.sqrt(np.sum(w * x**2) / wsum))
 
-    def covariance(self, key1: str, key2: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def covariance(self, key1: str, key2: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         x1 = np.asarray(self.get_data(key1), dtype=float)
         x2 = np.asarray(self.get_data(key2), dtype=float)
         w = self._get_weights(weight)
@@ -665,7 +660,7 @@ class ParticleDistribution3D:
             raise ValueError("Sum of weights is zero.")
         return float(np.sum(w * (x1 - mu1) * (x2 - mu2)) / wsum)
 
-    def correlation(self, key1: str, key2: str, weight: str | np.ndarray | None = "absQ") -> float:
+    def correlation(self, key1: str, key2: str, weight: str | np.ndarray | None = "Q_abs") -> float:
         cov = self.covariance(key1, key2, weight=weight)
         s1 = self.std(key1, weight=weight)
         s2 = self.std(key2, weight=weight)
@@ -673,7 +668,7 @@ class ParticleDistribution3D:
             return float("nan")
         return float(cov / (s1 * s2))
 
-    def linear_fit(self, xkey: str, ykey: str, weight: str | np.ndarray | None = "absQ") -> tuple[float, float]:
+    def linear_fit(self, xkey: str, ykey: str, weight: str | np.ndarray | None = "Q_abs") -> tuple[float, float]:
         x = np.asarray(self.get_data(xkey), dtype=float)
         y = np.asarray(self.get_data(ykey), dtype=float)
         w = self._get_weights(weight)
@@ -691,7 +686,7 @@ class ParticleDistribution3D:
         intercept = y_mean - slope * x_mean
         return float(slope), float(intercept)
 
-    def centroid(self, weight: str | np.ndarray | None = "absQ") -> dict[str, float]:
+    def centroid(self, weight: str | np.ndarray | None = "Q_abs") -> dict[str, float]:
         return {
             "x":  self.mean("x",  weight=weight),
             "y":  self.mean("y",  weight=weight),
@@ -703,7 +698,7 @@ class ParticleDistribution3D:
             "Q":  self.mean("Q",  weight=weight),
         }
 
-    def sigma_dict(self, weight: str | np.ndarray | None = "absQ") -> dict[str, float]:
+    def sigma_dict(self, weight: str | np.ndarray | None = "Q_abs") -> dict[str, float]:
         return {
             "x":  self.std("x",  weight=weight),
             "y":  self.std("y",  weight=weight),
@@ -773,7 +768,7 @@ class ParticleDistribution3D:
 
     def _calc_delta(self) -> np.ndarray:
         p = self.p_abs
-        p_ref = float(np.average(p, weights=np.abs(self._quantities["Q"].data)))
+        p_ref = float(np.average(p, weights=self.Q_abs))
         return (p - p_ref) / p_ref
 
     def _calc_Q_abs(self) -> np.ndarray:
@@ -908,7 +903,7 @@ class ParticleDistribution3D:
     
     @property 
     def cor_pz(self) -> float: #eV/c non-standard name
-        return float(self.covariance('z', 'pz', 'absQ')/self.std('z'))
+        return float(self.covariance('z', 'pz', 'Q_abs')/self.std('z'))
     
     @property
     def I_peak(self):

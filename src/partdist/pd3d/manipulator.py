@@ -1519,7 +1519,7 @@ def center_beam(
     x_key: str = "x",
     y_key: str = "y",
     z_key: str = "z",
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1534,7 +1534,7 @@ def center_beam(
     x_key, y_key, z_key : str
         Quantity keys for the three spatial coordinates.
     weight : None, str, or array-like
-        Particle weights. Defaults to 'absQ'.
+        Particle weights. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1627,7 +1627,7 @@ def apply_matrix_x(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1646,7 +1646,7 @@ def apply_matrix_x(
     M : array-like, shape (2, 2)
         Transport matrix acting on (x, x').
     weight : None, str, or array-like
-        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+        Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1668,7 +1668,7 @@ def apply_matrix_y(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1687,7 +1687,7 @@ def apply_matrix_y(
     M : array-like, shape (2, 2)
         Transport matrix acting on (y, y').
     weight : None, str, or array-like
-        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+        Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1709,7 +1709,7 @@ def apply_matrix_z(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1728,7 +1728,7 @@ def apply_matrix_z(
     M : array-like, shape (2, 2)
         Transport matrix acting on (z, δ).
     weight : None, str, or array-like
-        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+        Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1750,7 +1750,7 @@ def apply_matrix_xy(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1769,7 +1769,7 @@ def apply_matrix_xy(
     M : array-like, shape (4, 4)
         Transport matrix acting on (x, x', y, y').
     weight : None, str, or array-like
-        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+        Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1791,7 +1791,7 @@ def apply_matrix_6d(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
-    weight: Union[None, str, ArrayLike] = "absQ",
+    weight: Union[None, str, ArrayLike] = "Q_abs",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1819,7 +1819,7 @@ def apply_matrix_6d(
     M : array-like, shape (6, 6)
         Transport matrix acting on (x, x', y, y', z, δ).
     weight : None, str, or array-like
-        Particle weights used for centroid and p_ref. Defaults to 'absQ'.
+        Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
     inplace : bool
         Whether to modify the input distribution directly.
 

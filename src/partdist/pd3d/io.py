@@ -252,7 +252,7 @@ def _build_reference_from_distribution(
     dist: ParticleDistribution,
     *,
     mode: str = "mean",
-    weight: str | np.ndarray | None = "absQ",
+    weight: str | np.ndarray | None = "Q_abs",
     reference_time: float = 0.0,
     reference_charge: float = 0.0,
     default_species: int = 1,
@@ -430,7 +430,7 @@ def write_astra_distribution(
     status_key: str = "status",
     default_species: int = 1,
     default_status: int = 5,
-    weight: str | np.ndarray | None = "absQ",
+    weight: str | np.ndarray | None = "Q_abs",
     fmt: str = ASTRA_FMT,
     delimiter: str = " ",
 ) -> None:
