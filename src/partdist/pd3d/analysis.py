@@ -738,6 +738,7 @@ def fit_trend_from_profile(
     *,
     method: FitMethod = "spline",
     poly_order: int = 1,
+    poly_weight: Literal["count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"] = "weight_sum",
     spline_smoothing: float = 0.0,
     spline_weight: Literal["count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"] = "sqrt_count",
 ) -> TrendFitResult:
@@ -752,6 +753,10 @@ def fit_trend_from_profile(
         Fit method.
     poly_order : int
         Polynomial order for "poly". Ignored for "linear" and "spline".
+    poly_weight : {"count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"}
+        Weighting rule for "linear" and "poly" fitting. Passed as the ``w``
+        argument to ``numpy.polyfit``. Defaults to ``"weight_sum"`` so that
+        bins with more charge have greater influence on the fit.
     spline_smoothing : float
         Spline smoothing strength. Passed as s = len(x) * spline_smoothing.
     spline_weight : {"count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"}
@@ -768,8 +773,23 @@ def fit_trend_from_profile(
     if len(x_fit) < 2:
         raise ValueError("At least two valid points are required for trend fitting.")
 
+    def _resolve_poly_weight(rule: str) -> Optional[np.ndarray]:
+        if rule == "count":
+            return profile.counts_valid.astype(float)
+        elif rule == "sqrt_count":
+            return np.sqrt(profile.counts_valid.astype(float))
+        elif rule == "weight_sum":
+            return profile.weight_sum_valid.astype(float)
+        elif rule == "sqrt_weight_sum":
+            return np.sqrt(profile.weight_sum_valid.astype(float))
+        elif rule == "none":
+            return None
+        else:
+            raise ValueError(f"Unknown poly_weight={rule!r}.")
+
     if method == "linear":
-        coeff = np.polyfit(x_fit, y_fit, deg=1)
+        w_fit = _resolve_poly_weight(poly_weight)
+        coeff = np.polyfit(x_fit, y_fit, deg=1, w=w_fit)
         poly = np.poly1d(coeff)
 
         return TrendFitResult(
@@ -789,7 +809,8 @@ def fit_trend_from_profile(
                 f"Need at least {poly_order + 1} valid points for poly_order={poly_order}."
             )
 
-        coeff = np.polyfit(x_fit, y_fit, deg=poly_order)
+        w_fit = _resolve_poly_weight(poly_weight)
+        coeff = np.polyfit(x_fit, y_fit, deg=poly_order, w=w_fit)
         poly = np.poly1d(coeff)
 
         return TrendFitResult(
