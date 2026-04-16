@@ -10,8 +10,8 @@ import h5py
 from partdist.pd3d.io import read_genesis_distribution, read_astra_distribution
 
 DATA_DIR = Path(__file__).parent / 'data'
-H5_FILE   = DATA_DIR / 'scan.000.out.par.h5'
-ASTRA_FILE = DATA_DIR / 'matched.dist'
+H5_FILE   = DATA_DIR / '2_scan.000.out.par.h5'
+ASTRA_FILE = DATA_DIR / '2_matched.dist'
 
 @pytest.fixture
 def genesis_file():

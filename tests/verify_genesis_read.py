@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 from partdist.pd3d.io import read_genesis_distribution
 
 def main():
-    filepath = Path(__file__).parent / 'data' / 'scan.000.out.par.h5'
+    filepath = Path(__file__).parent / 'data' / '2_scan.000.out.par.h5'
     if not filepath.exists():
         print(f"Test file not found: {filepath}")
         return
@@ -48,11 +48,75 @@ def main():
     assert abs(total_charge_nonzero - total_charge_dropped) < 1e-20
 
     print("\nAll checks passed.")
-    return dist
+    return dist, dist2
 
 if __name__ == '__main__':
     from partdist.pd3d.viz import hist2d_pd3d
-    dist  = main()
+    import matplotlib.pyplot as plt
+    from partdist.pd3d.io import read_astra_distribution
+    
+    dist, _  = main()
+    dist.update_quantity('z', dist.z - dist.mean('z'))
+    dist2 = read_astra_distribution(Path('data/2_matched.dist'))
+    
+    fig, axes = plt.subplots(nrows=4, ncols=2, figsize=(8,12),
+                             layout='constrained',
+                             sharex='row',
+                             sharey='row',
+                             )
+    hist2d_pd3d(dist, x='x', y='y',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[0, 0]
+                )
+    
+    hist2d_pd3d(dist2, x='x', y='y',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[0, 1]
+                )
+    hist2d_pd3d(dist, x='x', y='px',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[1, 0]
+                )
+    
+    hist2d_pd3d(dist2, x='x', y='px',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[1, 1]
+                )
+    hist2d_pd3d(dist, x='y', y='py',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[2, 0]
+                )
+    
+    hist2d_pd3d(dist2, x='y', y='py',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[2, 1]
+                )
     hist2d_pd3d(dist, x='z', y='pz',
                 color_threshold=1e-2,
-                cmap='jet')
+                cmap='jet',
+                fig=fig,
+                ax=axes[3, 0]
+                )
+    
+    hist2d_pd3d(dist2, x='z', y='pz',
+                color_threshold=1e-2,
+                cmap='jet',
+                fig=fig,
+                ax=axes[3, 1]
+                )
+    axes[0, 0].set_title('GENESIS')
+    axes[0, 1].set_title('Astra')
+    import xtils
+    xtils.save_figure_auto_date(fig)

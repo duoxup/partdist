@@ -143,6 +143,17 @@ class ParticleDistribution3D:
     def __len__(self) -> int:
         return self.n
 
+    def __getattr__(self, name: str) -> np.ndarray:
+        # Called only when normal attribute lookup (properties, instance dict) fails.
+        # Provides attribute-style access to extra quantities, e.g. dist.status.
+        # Guard against recursive calls before _quantities is initialised.
+        if "_quantities" not in self.__dict__:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
+        quantities = self.__dict__["_quantities"]
+        if name in quantities and name not in self._BASE_SPECS and name not in self._DERIVED_SPECS:
+            return quantities[name].data
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}")
+
     @classmethod
     def from_arrays(
         cls,

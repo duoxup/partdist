@@ -559,24 +559,37 @@ def from_ocelot_particle_array(pa: "Any") -> ParticleDistribution:
 
     ocelot ``ParticleArray`` coordinate layout
     -------------------------------------------
-    ``rparticles[0]``: *x*  — horizontal position [m]
-    ``rparticles[1]``: *x'* = px/p₀ — horizontal divergence [rad]
-    ``rparticles[2]``: *y*  — vertical position [m]
-    ``rparticles[3]``: *y'* = py/p₀ — vertical divergence [rad]
-    ``rparticles[4]``: *τ*  = t − t_ref — time offset [s]
-                       (positive → particle is *behind* the reference)
-    ``rparticles[5]``: *δ*  = (E − E₀)/(p₀c) — relative energy deviation
-    ``q_array``      : macro-particle charge [C]
-    ``E``            : reference energy [GeV]
-    ``s``            : reference position along the beamline [m]
+    ``rparticles[0]``: *x*   — horizontal position [m]
+    ``rparticles[1]``: *x'*  = px/p₀ — horizontal divergence [rad]
+    ``rparticles[2]``: *y*   — vertical position [m]
+    ``rparticles[3]``: *y'*  = py/p₀ — vertical divergence [rad]
+    ``rparticles[4]``: *tau* — longitudinal position offset [m],
+                       defined as ``tau = pa.s − z``.
+                       Positive tau → particle is *behind* the reference
+                       (smaller z, arrives later).
+    ``rparticles[5]``: *p*   = (E − E₀) / (p₀c) — relative energy deviation
+    ``q_array``       : macro-particle charge [C]
+    ``E``             : reference energy [GeV]
+    ``s``             : reference position along the beamline [m]
+
+    Note on tau
+    -----------
+    Despite the name, ocelot's tau coordinate is **not** time; it is a
+    longitudinal *position* offset in metres (``tau = pa.s − z``).
+    This is confirmed by:
+
+    * ``std(tau) * 1e3`` is printed in "mm" in ocelot's ``__repr__``.
+    * ``t = parray.tau() / speed_of_light`` (ocelot source) divides tau by c
+      to obtain time, so tau must be in m.
+    * ``z = p_array.tau()`` is used directly as a position in ocelot utilities.
 
     Returned :class:`ParticleDistribution` conventions
     ---------------------------------------------------
     ``x``, ``y``    : transverse positions [m]  (unchanged)
-    ``z``           : ``pa.s − c·τ``  [m]
+    ``z``           : ``pa.s − tau``  [m]
     ``px``, ``py``  : transverse momenta [eV/c]  = x′/y′ × p₀c
-    ``pz``          : longitudinal momentum [eV/c]  (from total momentum)
-    ``t``           : ``pa.s/c + τ``  [s]
+    ``pz``          : longitudinal momentum [eV/c]  (derived from total energy)
+    ``t``           : ``z / c``  [s]  (ultra-relativistic approximation, β ≈ 1)
     ``Q``           : ``pa.q_array``  [C]
     """
     m_e_eV: float = g_m0 * g_c ** 2 / abs(g_e0)   # electron rest energy [eV]
@@ -586,11 +599,11 @@ def from_ocelot_particle_array(pa: "Any") -> ParticleDistribution:
     p0c_eV: float = p0c_GeV * 1e9        # [eV]
 
     x   = np.array(pa.rparticles[0], dtype=float)
-    xp  = np.array(pa.rparticles[1], dtype=float)  # x' = px_perp / p₀
+    xp  = np.array(pa.rparticles[1], dtype=float)  # x' = px / p₀
     y   = np.array(pa.rparticles[2], dtype=float)
-    yp  = np.array(pa.rparticles[3], dtype=float)  # y' = py_perp / p₀
-    tau = np.array(pa.rparticles[4], dtype=float)  # time offset  [s]
-    dp  = np.array(pa.rparticles[5], dtype=float)  # δ = (E−E₀)/p₀c
+    yp  = np.array(pa.rparticles[3], dtype=float)  # y' = py / p₀
+    tau = np.array(pa.rparticles[4], dtype=float)  # longitudinal position offset [m]
+    dp  = np.array(pa.rparticles[5], dtype=float)  # (E − E₀) / p₀c  (dimensionless)
 
     # Transverse momenta [eV/c]
     px_evc = xp * p0c_eV
@@ -601,9 +614,11 @@ def from_ocelot_particle_array(pa: "Any") -> ParticleDistribution:
     p_abs_sq = np.maximum(E_eV ** 2 - m_e_eV ** 2, 0.0)
     pz_evc = np.sqrt(np.maximum(p_abs_sq - px_evc ** 2 - py_evc ** 2, 0.0))
 
-    # Longitudinal position and time
-    z = pa.s - g_c * tau          # [m]
-    t = pa.s / g_c + tau          # [s]
+    # Longitudinal position: tau = pa.s − z  →  z = pa.s − tau
+    z = float(pa.s) - tau          # [m]
+
+    # Time: ultra-relativistic approximation (β ≈ 1)
+    t = z / g_c                    # [s]
 
     return ParticleDistribution(
         x=x, y=y, z=z,
@@ -626,15 +641,15 @@ def to_ocelot_particle_array(
 
     ocelot ``ParticleArray`` conventions used
     -----------------------------------------
-    ``rparticles[0]``: *x*  [m]  (unchanged)
-    ``rparticles[1]``: *x'* = px / p₀c  [rad]
-    ``rparticles[2]``: *y*  [m]  (unchanged)
-    ``rparticles[3]``: *y'* = py / p₀c  [rad]
-    ``rparticles[4]``: *τ*  = t − s/c  [s]  (positive → behind reference)
-    ``rparticles[5]``: *δ*  = (E − E₀) / p₀c  (dimensionless)
-    ``q_array``      : macro-particle charge [C]
-    ``E``            : charge-weighted mean energy [GeV]
-    ``s``            : ``s`` parameter [m]
+    ``rparticles[0]``: *x*   [m]  (unchanged)
+    ``rparticles[1]``: *x'*  = px / p₀c  [rad]
+    ``rparticles[2]``: *y*   [m]  (unchanged)
+    ``rparticles[3]``: *y'*  = py / p₀c  [rad]
+    ``rparticles[4]``: *tau* = s − z  [m]  (positive → behind reference)
+    ``rparticles[5]``: *p*   = (E − E₀) / p₀c  (dimensionless)
+    ``q_array``       : macro-particle charge [C]
+    ``E``             : charge-weighted mean energy [GeV]
+    ``s``             : ``s`` parameter [m]
 
     Parameters
     ----------
@@ -661,19 +676,17 @@ def to_ocelot_particle_array(
     total_weight = float(weights.sum())
     if total_weight > 0.0:
         E0_eV = float(np.dot(weights, E_eV) / total_weight)
-        t_ref_dist = float(np.dot(weights, np.asarray(dist.t, dtype=float)) / total_weight)
     else:
         E0_eV = float(np.mean(E_eV))
-        t_ref_dist = float(np.mean(dist.t))
 
     E0_GeV = E0_eV * 1e-9
     p0c_eV = float(np.sqrt(max(E0_eV ** 2 - m_e_eV ** 2, 0.0)))
 
     # ocelot phase-space coordinates
-    xp = px_evc / p0c_eV          # x' [rad]
-    yp = py_evc / p0c_eV          # y' [rad]
-    tau = np.asarray(dist.t, dtype=float) - float(s) / g_c   # [s]
-    delta = (E_eV - E0_eV) / p0c_eV                          # δ
+    xp    = px_evc / p0c_eV                                        # x' [rad]
+    yp    = py_evc / p0c_eV                                        # y' [rad]
+    tau   = float(s) - np.asarray(dist.z, dtype=float)             # tau = s − z  [m]
+    delta = (E_eV - E0_eV) / p0c_eV                               # p = (E−E₀)/p₀c
 
     n = dist.size
     pa = ParticleArray(n=n)

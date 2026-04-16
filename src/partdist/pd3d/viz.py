@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 import xtils
@@ -481,3 +481,180 @@ def _add_projection_curves_pd3d(
         xcenters_raw,
         ycenters_raw,
     )
+
+
+def plot_binned_profile(
+    dist: ParticleDistribution,
+    x: Union[str, np.ndarray],
+    y: Union[str, np.ndarray],
+    *,
+    bins: int = 100,
+    x_range: Optional[tuple[float, float]] = None,
+    weight: Union[None, str, np.ndarray] = "Q_abs",
+    stat: str = "weighted_mean",
+    min_count: int = 1,
+    min_weight_sum: float = 0.0,
+    mask: Optional[np.ndarray] = None,
+    plot_stat: str = "stat",
+    show_std_band: bool = False,
+    std_band_alpha: float = 0.3,
+    fig=None,
+    ax=None,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+    **plot_kwargs: Any,
+):
+    """
+    Compute and plot a 1D binned profile y(x).
+
+    Typical use cases
+    -----------------
+    Slice centroid vs z::
+
+        plot_binned_profile(dist, x="z", y="x")
+
+    Slice energy spread vs z::
+
+        plot_binned_profile(dist, x="z", y="pz", plot_stat="std")
+
+    Parameters
+    ----------
+    dist
+        ParticleDistribution instance.
+    x, y
+        Quantity keys (str) or explicit arrays. Labels and unit autoscaling
+        are applied automatically when string keys are given.
+    bins
+        Number of bins.
+    x_range
+        Explicit x range ``(xmin, xmax)``. If None, inferred from data.
+    weight
+        Particle weights passed to ``compute_binned_profile``.
+    stat
+        Binned statistic for ``y_stat``: ``"mean"``, ``"weighted_mean"``,
+        or ``"median"``.
+    min_count, min_weight_sum
+        Validity thresholds for bins.
+    mask
+        Optional particle mask.
+    plot_stat
+        Which per-bin value to draw:
+
+        - ``"stat"``  – the main statistic (default)
+        - ``"std"``   – per-bin standard deviation
+        - ``"rms"``   – per-bin RMS
+
+    show_std_band
+        If ``True`` and ``plot_stat="stat"``, shade ±σ around the line.
+        Ignored for other ``plot_stat`` values.
+    std_band_alpha
+        Alpha of the shaded band.
+    fig, ax
+        Optional matplotlib figure and axes.
+    xlabel, ylabel
+        Override axis labels. Auto-generated from quantity metadata if None.
+    **plot_kwargs
+        Forwarded to ``ax.plot(...)``.
+
+    Returns
+    -------
+    fig, ax, line, profile
+        Matplotlib figure, axes, Line2D artist, and the
+        :class:`~partdist.pd3d.analysis.BinnedProfileResult`.
+    """
+    from .analysis import compute_binned_profile
+
+    fig, ax = xtils.ensure_fig_ax(fig, ax)
+    fig.set_layout_engine("constrained")
+
+    profile = compute_binned_profile(
+        dist,
+        x,
+        y,
+        bins=bins,
+        x_range=x_range,
+        weight=weight,
+        stat=stat,
+        min_count=min_count,
+        min_weight_sum=min_weight_sum,
+        mask=mask,
+    )
+
+    # Select y values to plot
+    if plot_stat == "stat":
+        y_data = profile.y_valid
+    elif plot_stat == "std":
+        y_data = profile.y_std_valid
+    elif plot_stat == "rms":
+        y_data = profile.y_rms_valid
+    else:
+        raise ValueError(f"Unknown plot_stat={plot_stat!r}. Choose 'stat', 'std', or 'rms'.")
+
+    x_data = profile.x_valid
+
+    # --- unit / autoscale ---
+    x_unit = ""
+    if isinstance(x, str):
+        try:
+            x_unit = dist.get_quantity(x).unit or ""
+        except KeyError:
+            pass
+
+    y_unit = ""
+    if isinstance(y, str):
+        try:
+            y_unit = dist.get_quantity(y).unit or ""
+        except KeyError:
+            pass
+
+    x_data_scaled, x_unit_scaled = _autoscale_data_and_unit(x_data, x_unit)
+    y_data_scaled, y_unit_scaled = _autoscale_data_and_unit(y_data, y_unit)
+
+    # --- plot ---
+    line, = ax.plot(x_data_scaled, y_data_scaled, **plot_kwargs)
+
+    # Optional ±σ band (only meaningful for the main statistic)
+    if show_std_band and plot_stat == "stat":
+        y_std = profile.y_std_valid
+        if y_unit and len(y_data) > 0:
+            yscale, _ = xtils.get_autoscale(y_data)
+        else:
+            yscale = 1.0
+        y_std_scaled = y_std * yscale
+        ax.fill_between(
+            x_data_scaled,
+            y_data_scaled - y_std_scaled,
+            y_data_scaled + y_std_scaled,
+            alpha=std_band_alpha,
+            color=line.get_color(),
+        )
+
+    # --- axis labels ---
+    if xlabel is None and isinstance(x, str):
+        try:
+            xlabel = _label_from_key(dist, x, unit_override=x_unit_scaled)
+        except KeyError:
+            xlabel = str(x)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+
+    if ylabel is None and isinstance(y, str):
+        try:
+            yq = dist.get_quantity(y)
+            yname = yq.latex_name or yq.short_name or yq.name
+            if plot_stat == "std":
+                ylabel = (
+                    f"σ({yname}) [{y_unit_scaled}]" if y_unit_scaled else f"σ({yname})"
+                )
+            elif plot_stat == "rms":
+                ylabel = (
+                    f"RMS({yname}) [{y_unit_scaled}]" if y_unit_scaled else f"RMS({yname})"
+                )
+            else:
+                ylabel = _label_from_key(dist, y, unit_override=y_unit_scaled)
+        except KeyError:
+            ylabel = str(y)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    return fig, ax, line, profile

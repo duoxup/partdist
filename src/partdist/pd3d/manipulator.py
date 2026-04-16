@@ -1746,6 +1746,85 @@ def apply_matrix_z(
     return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
 
 
+def apply_chicane_map(
+    dist: "ParticleDistribution",
+    R56: float,
+    *,
+    T566: float = 0.0,
+    U5666: float = 0.0,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Apply a chicane longitudinal transfer map up to third order.
+
+    A magnetic chicane conserves particle momentum; only the path length (and
+    hence z) changes.  The map is::
+
+        z_new = z + R56·δ + T566·δ² + U5666·δ³
+        δ_new = δ         (momenta unchanged)
+
+    where ``δ = (|p| − p_ref) / p_ref`` is the relative momentum deviation and
+    ``p_ref`` is the charge-weighted mean total momentum.
+
+    Relation to ``apply_matrix_z``
+    --------------------------------
+    ``apply_matrix_z`` with the standard chicane matrix::
+
+        M = [[1, R56],
+             [0, 1  ]]
+
+    is equivalent to calling this function with ``T566=0`` and ``U5666=0``.
+    Use this function when second- or third-order chromatic effects matter.
+
+    Typical parameter values (four-dipole symmetric chicane)
+    --------------------------------------------------------
+    For a four-dipole chicane with half-bend angle θ and bend radius ρ::
+
+        R56  ≈  −2θ²L_d   (L_d = drift length between dipoles)
+        T566 ≈  1.5 × |R56|
+        U5666 ≈ ...        (usually negligible)
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Input distribution.
+    R56 : float
+        First-order momentum compaction [m].
+        Negative for a compressing chicane with positive energy chirp
+        (δ > 0 at the bunch head).
+    T566 : float
+        Second-order term [m].  Default 0.
+    U5666 : float
+        Third-order term [m].  Default 0.
+    weight : None, str, or array-like
+        Particle weights used to define ``p_ref``.  Defaults to ``'Q_abs'``.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Distribution after applying the chicane map.
+    """
+    out = _copy_or_inplace(dist, inplace=inplace)
+    w = _get_weight_array(out, weight, absolute=True)
+
+    p_abs = out.p_abs                                   # (n,)  [eV/c]
+    p_ref = float(np.average(p_abs, weights=w))
+    delta = (p_abs - p_ref) / p_ref                     # (n,)  dimensionless
+
+    z = out._quantities["z"].data.copy()
+    dz = float(R56) * delta
+    if T566 != 0.0:
+        dz = dz + float(T566) * delta**2
+    if U5666 != 0.0:
+        dz = dz + float(U5666) * delta**3
+
+    out.update_quantity("z", z + dz)
+    return out
+
+
 def apply_matrix_xy(
     dist: "ParticleDistribution",
     M: np.ndarray,
