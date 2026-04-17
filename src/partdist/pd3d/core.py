@@ -89,6 +89,7 @@ class ParticleDistribution3D:
         "current_flux_x_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight","latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
         "current_flux_y_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight","latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
         "current_flux_z_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight","latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
+        "tau":                {"unit": "m",      "dtype_kind": "float", "short_name": "tau",       "long_name": "relative path length",          "latex_name": r"$\tau$",      "category": "position", "is_derived": True},
     }
 
     def __init__(
@@ -782,6 +783,11 @@ class ParticleDistribution3D:
         p_ref = float(np.average(p, weights=self.Q_abs))
         return (p - p_ref) / p_ref
 
+    def _calc_tau(self) -> np.ndarray:
+        z = self._quantities["z"].data
+        z_ref = float(np.average(z, weights=self.Q_abs))
+        return z_ref - z
+
     def _calc_Q_abs(self) -> np.ndarray:
         return np.abs(self.Q)
 
@@ -1016,6 +1022,10 @@ class ParticleDistribution3D:
         return self._calc_delta()
 
     @property
+    def tau(self) -> np.ndarray:
+        return self._calc_tau()
+
+    @property
     def p_abs_si(self) -> np.ndarray:
         return self._calc_p_abs_si()
 
@@ -1070,6 +1080,19 @@ class ParticleDistribution3D:
     @property
     def pid(self) -> np.ndarray:
         return self.id
+
+    def centered(
+        self,
+        *,
+        x_key: str = "x",
+        y_key: str = "y",
+        z_key: str = "z",
+        weight: str | np.ndarray | None = "Q_abs",
+        inplace: bool = False,
+    ) -> "ParticleDistribution3D":
+        """Shift the charge-weighted centroid to (0, 0, 0)."""
+        from .manipulator import center_beam
+        return center_beam(self, x_key=x_key, y_key=y_key, z_key=z_key, weight=weight, inplace=inplace)
 
 
 # Backward-compatible alias — will be removed in a future version.

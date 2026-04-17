@@ -1710,6 +1710,7 @@ def apply_matrix_z(
     M: np.ndarray,
     *,
     weight: Union[None, str, ArrayLike] = "Q_abs",
+    convention: Literal["z", "tau"] = "z",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1726,9 +1727,18 @@ def apply_matrix_z(
     dist : ParticleDistribution
         Input distribution.
     M : array-like, shape (2, 2)
-        Transport matrix acting on (z, δ).
+        Transport matrix acting on (z, δ) or (τ, δ) depending on `convention`.
     weight : None, str, or array-like
         Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
+    convention : {"z", "tau"}
+        Longitudinal coordinate convention of the input matrix M.
+
+        - ``"z"``  : M acts on (z, δ) where z > 0 means ahead.
+          Compressing chicane: M[0,1] = R56 < 0.
+        - ``"tau"``: M acts on (τ, δ) where τ = z_ref − z, τ > 0 means lagging.
+          Compressing chicane: M[0,1] = R56 > 0 (standard beam-optics textbook sign).
+          The matrix is converted to z convention internally via S·M·S,
+          where S = diag(−1, 1).
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1740,6 +1750,11 @@ def apply_matrix_z(
     M = np.asarray(M, dtype=float)
     if M.shape != (2, 2):
         raise ValueError(f"M must be a 2×2 matrix, got shape {M.shape}.")
+    if convention == "tau":
+        # S = diag(-1, 1);  M_z = S @ M_tau @ S  flips off-diagonal signs
+        M = M * np.array([[1., -1.], [-1., 1.]])
+    elif convention != "z":
+        raise ValueError(f"convention must be 'z' or 'tau', got {convention!r}.")
     M6 = np.eye(6)
     M6[np.ix_([4, 5], [4, 5])] = M
     out = _copy_or_inplace(dist, inplace=inplace)
@@ -1753,6 +1768,7 @@ def apply_chicane_map(
     T566: float = 0.0,
     U5666: float = 0.0,
     weight: Union[None, str, ArrayLike] = "Q_abs",
+    convention: Literal["z", "tau"] = "z",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1769,7 +1785,7 @@ def apply_chicane_map(
 
     Relation to ``apply_matrix_z``
     --------------------------------
-    ``apply_matrix_z`` with the standard chicane matrix::
+    ``apply_matrix_z`` with the standard chicane matrix (z convention)::
 
         M = [[1, R56],
              [0, 1  ]]
@@ -1791,14 +1807,20 @@ def apply_chicane_map(
         Input distribution.
     R56 : float
         First-order momentum compaction [m].
-        Negative for a compressing chicane with positive energy chirp
-        (δ > 0 at the bunch head).
+
+        Interpretation depends on ``convention``:
+
+        - ``"z"``  : R56 < 0 for a compressing chicane (δ > 0 at the bunch head).
+        - ``"tau"``: R56 > 0 for a compressing chicane (standard textbook sign,
+          where R56 = ∂τ/∂δ and τ > 0 means lagging).
     T566 : float
-        Second-order term [m].  Default 0.
+        Second-order term [m].  Sign follows the same convention as R56.  Default 0.
     U5666 : float
-        Third-order term [m].  Default 0.
+        Third-order term [m].  Sign follows the same convention as R56.  Default 0.
     weight : None, str, or array-like
         Particle weights used to define ``p_ref``.  Defaults to ``'Q_abs'``.
+    convention : {"z", "tau"}
+        Sign convention for R56, T566, U5666.  Default ``"z"``.
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1807,6 +1829,11 @@ def apply_chicane_map(
     ParticleDistribution
         Distribution after applying the chicane map.
     """
+    if convention == "tau":
+        R56, T566, U5666 = -R56, -T566, -U5666
+    elif convention != "z":
+        raise ValueError(f"convention must be 'z' or 'tau', got {convention!r}.")
+
     out = _copy_or_inplace(dist, inplace=inplace)
     w = _get_weight_array(out, weight, absolute=True)
 
@@ -1866,11 +1893,15 @@ def apply_matrix_xy(
     return _apply_transport_matrix_core(out, M6, _get_weight_array(out, weight, absolute=True))
 
 
+_S6 = np.diag([1., 1., 1., 1., -1., 1.])
+
+
 def apply_matrix_6d(
     dist: "ParticleDistribution",
     M: np.ndarray,
     *,
     weight: Union[None, str, ArrayLike] = "Q_abs",
+    convention: Literal["z", "tau"] = "z",
     inplace: bool = False,
 ) -> "ParticleDistribution":
     """
@@ -1896,9 +1927,19 @@ def apply_matrix_6d(
     dist : ParticleDistribution
         Input distribution.
     M : array-like, shape (6, 6)
-        Transport matrix acting on (x, x', y, y', z, δ).
+        Transport matrix acting on (x, x', y, y', z, δ) or (x, x', y, y', τ, δ)
+        depending on `convention`.
     weight : None, str, or array-like
         Particle weights used for centroid and p_ref. Defaults to 'Q_abs'.
+    convention : {"z", "tau"}
+        Longitudinal coordinate convention of the input matrix M.
+
+        - ``"z"``  : M acts on (x, x', y, y', z, δ), z > 0 ahead.
+          Compressing chicane: M[4,5] = R56 < 0.
+        - ``"tau"``: M acts on (x, x', y, y', τ, δ), τ > 0 lagging (standard textbook).
+          Compressing chicane: M[4,5] = R56 > 0.
+          Converted to z convention internally via S·M·S,
+          where S = diag(1, 1, 1, 1, −1, 1).
     inplace : bool
         Whether to modify the input distribution directly.
 
@@ -1910,6 +1951,10 @@ def apply_matrix_6d(
     M = np.asarray(M, dtype=float)
     if M.shape != (6, 6):
         raise ValueError(f"M must be a 6×6 matrix, got shape {M.shape}.")
+    if convention == "tau":
+        M = _S6 @ M @ _S6
+    elif convention != "z":
+        raise ValueError(f"convention must be 'z' or 'tau', got {convention!r}.")
     out = _copy_or_inplace(dist, inplace=inplace)
     return _apply_transport_matrix_core(out, M, _get_weight_array(out, weight, absolute=True))
 
