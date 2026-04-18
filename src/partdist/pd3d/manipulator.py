@@ -1852,6 +1852,72 @@ def apply_chicane_map(
     return out
 
 
+def invert_chicane_map(
+    dist: "ParticleDistribution",
+    R56: float,
+    *,
+    T566: float = 0.0,
+    U5666: float = 0.0,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+    convention: Literal["z", "tau"] = "z",
+    inplace: bool = False,
+) -> "ParticleDistribution":
+    """
+    Invert a chicane longitudinal transfer map up to third order.
+
+    Given a distribution *after* a chicane, recover the distribution *before*
+    the chicane.  Because a chicane leaves momenta unchanged, δ is known
+    exactly from the compressed beam, and the inversion is::
+
+        z_old = z_new − R56·δ − T566·δ² − U5666·δ³
+        δ_old = δ_new
+
+    Parameters
+    ----------
+    dist : ParticleDistribution
+        Distribution **after** the chicane (compressed beam).
+    R56 : float
+        First-order momentum compaction [m].  Same sign convention as
+        ``apply_chicane_map``.
+    T566 : float
+        Second-order term [m].  Default 0.
+    U5666 : float
+        Third-order term [m].  Default 0.
+    weight : None, str, or array-like
+        Particle weights used to define ``p_ref``.  Defaults to ``'Q_abs'``.
+    convention : {"z", "tau"}
+        Sign convention for R56, T566, U5666.  Default ``"z"``.
+    inplace : bool
+        Whether to modify the input distribution directly.
+
+    Returns
+    -------
+    ParticleDistribution
+        Distribution before the chicane (decompressed beam).
+    """
+    if convention == "tau":
+        R56, T566, U5666 = -R56, -T566, -U5666
+    elif convention != "z":
+        raise ValueError(f"convention must be 'z' or 'tau', got {convention!r}.")
+
+    out = _copy_or_inplace(dist, inplace=inplace)
+    w = _get_weight_array(out, weight, absolute=True)
+
+    p_abs = out.p_abs
+    p_ref = float(np.average(p_abs, weights=w))
+    delta = (p_abs - p_ref) / p_ref
+
+    z = out._quantities["z"].data.copy()
+    dz = float(R56) * delta
+    if T566 != 0.0:
+        dz = dz + float(T566) * delta**2
+    if U5666 != 0.0:
+        dz = dz + float(U5666) * delta**3
+
+    out.update_quantity("z", z - dz)
+    return out
+
+
 def apply_matrix_xy(
     dist: "ParticleDistribution",
     M: np.ndarray,
