@@ -929,7 +929,7 @@ class ParticleDistribution3D:
     #%% profiles
     @property
     def current_profile_z(self) -> tuple[np.ndarray, np.ndarray]:
-        return current_profile_z(self, bins=500)
+        return current_profile_z(self)
 
 
     #%% legacy properties

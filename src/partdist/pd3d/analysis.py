@@ -1293,7 +1293,7 @@ def line_charge_profile_z(
 def current_profile_z(
     dist: ParticleDistribution,
     *,
-    bins: int = 100,
+    bins: Optional[int] = None,
     range: Optional[tuple[float, float]] = None,
     z_key: str = "z",
     q_key: str = "Q",
@@ -1308,7 +1308,9 @@ def current_profile_z(
     dist
         ParticleDistribution instance.
     bins
-        Number of bins.
+        Number of bins.  If ``None`` (default), the bin count is chosen
+        automatically as ``clip(N // 500, 10, 500)`` where N is the number of
+        macroparticles, ensuring roughly 500 particles per bin on average.
     range
         Optional z range passed to numpy.histogram.
     z_key
@@ -1345,6 +1347,8 @@ def current_profile_z(
     """
     z = np.asarray(dist.get_data(z_key), dtype=float)
     q = np.abs(np.asarray(dist.get_data(q_key), dtype=float))
+    if bins is None:
+        bins = int(np.clip(len(z) // 500, 10, 500))
     edges, charge_hist, lambda_z = _compute_charge_histogram(z, q, bins, range)
 
     if use_c_approx:
