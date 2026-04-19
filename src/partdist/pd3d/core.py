@@ -841,9 +841,24 @@ class ParticleDistribution3D:
         return float(relconv.beta_from_ke_eV(self.mean('kinetic_energy_eV')))
     
     @property
-    def chirp(self) -> float:  #eV/m
-        return float(self.covariance('z', 'kinetic_energy_eV')/self.std('z')**2)
-    
+    def chirp(self) -> float:  # m^-1
+        return float(self.covariance('z', 'delta') / self.var('z'))
+
+    def _calc_chirp_poly_coeffs(self) -> np.ndarray:
+        z = self.get_data('z')
+        delta = self._calc_delta()
+        w = self.Q_abs
+        z_c = z - float(np.average(z, weights=w))
+        return np.polyfit(z_c, delta, deg=3, w=w)  # [a3, a2, a1, a0]
+
+    @property
+    def quadratic_chirp(self) -> float:  # m^-2
+        return float(self._calc_chirp_poly_coeffs()[1])
+
+    @property
+    def cubic_chirp(self) -> float:  # m^-3
+        return float(self._calc_chirp_poly_coeffs()[0])
+
     @property
     def cor_ekin(self) -> float: #eV
         return float(self.covariance('z', 'kinetic_energy_eV')/self.std('z'))
