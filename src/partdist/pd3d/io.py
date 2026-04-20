@@ -1025,17 +1025,36 @@ def _build_longitudinal_cdf(
     return Fx, Fx_inv
 
 
-def _make_zero_current_slice(npart: int, gamma_ref: float) -> dict:
-    """Return arrays for a zero-current slice (data-format filler only)."""
+def _make_zero_current_slice_from_template(template: dict[str, np.ndarray]) -> dict:
+    """
+    Return a zero-current slice using a non-degenerate transverse template.
+
+    The copied particles are format fillers only; the slice current remains
+    zero so Genesis should treat the slice as empty in current-weighted
+    physics while still avoiding singular all-particles-overlap geometry.
+    """
+    npart = int(np.asarray(template["x"]).size)
     return dict(
-        x=np.zeros(npart),
-        y=np.zeros(npart),
+        x=np.asarray(template["x"], dtype=float).copy(),
+        y=np.asarray(template["y"], dtype=float).copy(),
         theta=np.linspace(0.0, 2.0 * np.pi, npart, endpoint=False),
-        px=np.zeros(npart),
-        py=np.zeros(npart),
-        gamma=np.full(npart, gamma_ref),
+        px=np.asarray(template["px"], dtype=float).copy(),
+        py=np.asarray(template["py"], dtype=float).copy(),
+        gamma=np.asarray(template["gamma"], dtype=float).copy(),
         current=0.0,
     )
+
+
+def _write_dataset_with_unit(
+    group: h5py.Group | h5py.File,
+    name: str,
+    data: Any,
+    unit: str | None = None,
+):
+    ds = group.create_dataset(name, data=data)
+    if unit is not None:
+        ds.attrs["unit"] = unit
+    return ds
 
 
 # ---------------------------------------------------------------------------
@@ -1062,6 +1081,7 @@ def write_genesis_distribution(
     min_particles: int = 2,
     on_warning: Literal["silent", "warn", "raise"] = "warn",
     version: int = 4,
+    nbins: int = 16,
     seed: Optional[int] = None,
 ) -> None:
     """
@@ -1130,6 +1150,9 @@ def write_genesis_distribution(
     version
         Genesis version (3 or 4).  Affects ``one4one`` flag and version
         metadata written to the file.  Default 4.
+    nbins
+        Beamlet size written to ``beamletsize`` in the output file.
+        Default 16 for backward interface compatibility.
     seed
         Random seed.  If ``None``, a random seed is chosen.
     """
@@ -1142,6 +1165,8 @@ def write_genesis_distribution(
         raise ValueError(f"mpi_nproc must be a positive integer, got {mpi_nproc!r}.")
     if version not in (3, 4):
         raise ValueError(f"version must be 3 or 4, got {version!r}.")
+    if not isinstance(nbins, int) or nbins < 1:
+        raise ValueError(f"nbins must be a positive integer, got {nbins!r}.")
     if theta_method not in ("direct", "hammersley", "penman"):
         raise ValueError(
             f"theta_method must be 'direct', 'hammersley', or 'penman', "
@@ -1189,10 +1214,28 @@ def write_genesis_distribution(
 
     Qb = float(Q_abs.sum())
     w = Q_abs
-    gamma_ref = float(np.average(gamma, weights=w))
+    # ------------------------------------------------------------------
+    # 4. RNG and Halton setup
+    # ------------------------------------------------------------------
+    if seed is None:
+        seed = int(np.random.randint(0, 2**31))
+    rng = np.random.default_rng(seed)
+
+    global_template = None
+    if len(z) >= min_particles:
+        theta_global = ((z - s0) / slicelength * _TWO_PI) % _TWO_PI
+        arr6d_global = np.column_stack([x, y, theta_global, px_norm, py_norm, gamma])
+        resampled_global = _resample_slice_particles(arr6d_global, npart, rng)
+        global_template = dict(
+            x=resampled_global[:, 0],
+            y=resampled_global[:, 1],
+            px=resampled_global[:, 3],
+            py=resampled_global[:, 4],
+            gamma=resampled_global[:, 5],
+        )
 
     # ------------------------------------------------------------------
-    # 4. Apply z0 offset
+    # 5. Apply z0 offset
     # ------------------------------------------------------------------
     if z0 is not None:
         if isinstance(z0, str):
@@ -1206,7 +1249,7 @@ def write_genesis_distribution(
         z = z + z_shift
 
     # ------------------------------------------------------------------
-    # 5. Check window bounds
+    # 6. Check window bounds
     # ------------------------------------------------------------------
     s1 = s0 + slen
     mask_out = (z < s0) | (z >= s1)
@@ -1219,7 +1262,7 @@ def write_genesis_distribution(
         )
 
     # ------------------------------------------------------------------
-    # 6. Build CDF if needed
+    # 7. Build CDF if needed
     # ------------------------------------------------------------------
     need_cdf = smooth_current or theta_method in ("hammersley", "penman")
     cdf_result = None
@@ -1241,13 +1284,6 @@ def write_genesis_distribution(
         else:
             Fx, Fx_inv = cdf_result
 
-    # ------------------------------------------------------------------
-    # 7. RNG and Halton setup
-    # ------------------------------------------------------------------
-    if seed is None:
-        seed = int(np.random.randint(0, 2**31))
-    rng = np.random.default_rng(seed)
-
     halton_samples: Optional[np.ndarray] = None
     halton_idx = 0
     if theta_method == "hammersley":
@@ -1262,6 +1298,7 @@ def write_genesis_distribution(
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(filepath, "w") as f:
+        template_slice = global_template
         for islice in range(nslice):
             slice_left = s0 + islice * slicespacing
             slice_right = slice_left + slicelength
@@ -1272,7 +1309,11 @@ def write_genesis_distribution(
             slicename = f"/slice{islice + 1:06d}/"
 
             if n_in < min_particles:
-                sd = _make_zero_current_slice(npart, gamma_ref)
+                if template_slice is None:
+                    raise RuntimeError(
+                        "No valid template slice available for zero-current slice generation."
+                    )
+                sd = _make_zero_current_slice_from_template(template_slice)
             else:
                 # ---- current ----
                 if need_cdf and cdf_result is not None:
@@ -1340,21 +1381,32 @@ def write_genesis_distribution(
                 sd = dict(x=x_out, y=y_out, theta=theta_out,
                           px=px_out, py=py_out, gamma=gamma_out,
                           current=current)
+                template_slice = dict(
+                    x=np.asarray(x_out, dtype=float).copy(),
+                    y=np.asarray(y_out, dtype=float).copy(),
+                    px=np.asarray(px_out, dtype=float).copy(),
+                    py=np.asarray(py_out, dtype=float).copy(),
+                    gamma=np.asarray(gamma_out, dtype=float).copy(),
+                )
 
-            f.create_dataset(slicename + "current", data=[sd["current"]])
-            f.create_dataset(slicename + "x",       data=sd["x"])
-            f.create_dataset(slicename + "y",       data=sd["y"])
-            f.create_dataset(slicename + "theta",   data=sd["theta"])
-            f.create_dataset(slicename + "px",      data=sd["px"])
-            f.create_dataset(slicename + "py",      data=sd["py"])
-            f.create_dataset(slicename + "gamma",   data=sd["gamma"])
+            _write_dataset_with_unit(f, slicename + "current", [sd["current"]], "A")
+            _write_dataset_with_unit(f, slicename + "x", sd["x"], "m")
+            _write_dataset_with_unit(f, slicename + "y", sd["y"], "m")
+            _write_dataset_with_unit(f, slicename + "theta", sd["theta"], "rad")
+            _write_dataset_with_unit(f, slicename + "px", sd["px"], "rad")
+            _write_dataset_with_unit(f, slicename + "py", sd["py"], "rad")
+            _write_dataset_with_unit(f, slicename + "gamma", sd["gamma"], " ")
 
         # Root datasets
-        f.create_dataset("slicelength",  data=[slicelength])
-        f.create_dataset("slicespacing", data=[slicespacing])
-        f.create_dataset("refposition",  data=[s0])
-        f.create_dataset("slicecount",   data=[nslice])
-        f.create_dataset("beamletsize",  data=[16])
-        f.create_dataset("one4one",      data=[0])
+        _write_dataset_with_unit(f, "slicelength", [slicelength], "m")
+        _write_dataset_with_unit(f, "slicespacing", [slicespacing], "m")
+        _write_dataset_with_unit(f, "refposition", [s0], "m")
+        _write_dataset_with_unit(f, "slicecount", [nslice])
+        _write_dataset_with_unit(f, "beamletsize", [nbins])
+        _write_dataset_with_unit(f, "one4one", [0])
         if version == 4:
-            f.create_dataset("/Meta/Version/Major", data=[4.0])
+            _write_dataset_with_unit(f, "/Meta/Version/Major", [4.0], " ")
+            _write_dataset_with_unit(f, "/Meta/Version/Minor", [0.0], " ")
+            _write_dataset_with_unit(f, "/Meta/Version/Revision", [0.0], " ")
+            _write_dataset_with_unit(f, "/Meta/Version/Beta", [0.0], " ")
+            f.create_dataset("/Meta/Version/Build_Info", data=np.bytes_("written by partdist"))
