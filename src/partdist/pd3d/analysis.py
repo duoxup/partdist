@@ -1299,6 +1299,9 @@ def current_profile_z(
     q_key: str = "Q",
     vz_key: str = "vz",
     use_c_approx: bool = False,
+    smooth: bool = False,
+    smooth_window: int = 17,
+    smooth_poly: int = 4,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute the longitudinal current profile I(z).
@@ -1322,6 +1325,14 @@ def current_profile_z(
     use_c_approx
         If True, use I = lambda * c.
         If False, use the bin-wise charge-weighted mean vz.
+    smooth
+        If True, apply Savitzky-Golay smoothing to the line charge density
+        before computing the current.  Total charge is preserved by rescaling.
+    smooth_window
+        Window length for Savitzky-Golay filter (must be odd and >= 3).
+        Automatically clamped to the number of bins if necessary.  Default 17.
+    smooth_poly
+        Polynomial order for Savitzky-Golay filter.  Default 4.
 
     Returns
     -------
@@ -1350,6 +1361,21 @@ def current_profile_z(
     if bins is None:
         bins = int(np.clip(len(z) // 500, 10, 500))
     edges, charge_hist, lambda_z = _compute_charge_histogram(z, q, bins, range)
+
+    if smooth:
+        from scipy.signal import savgol_filter
+        n = len(lambda_z)
+        win = min(smooth_window, n)
+        win = win if win % 2 == 1 else win - 1
+        win = max(win, 3)
+        poly = min(smooth_poly, win - 1)
+        smoothed = savgol_filter(lambda_z, win, poly)
+        smoothed = np.maximum(smoothed, 0.0)
+        total_orig = float(np.sum(charge_hist))
+        total_smooth = float(np.sum(smoothed * np.diff(edges)))
+        if total_smooth > 0:
+            smoothed *= total_orig / total_smooth
+        lambda_z = smoothed
 
     if use_c_approx:
         v_rep = np.full_like(lambda_z, g_c, dtype=float)

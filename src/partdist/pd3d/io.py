@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Optional, Union
 
 import h5py
 import numpy as np
@@ -835,8 +836,8 @@ def read_genesis_distribution(
             pz_evc = pz_norm * factor_evc
 
             # Longitudinal position from theta
-            # theta ∈ [-π, π] maps to z_relative ∈ [0, slicelength]
-            z_relative = (theta / (2 * np.pi) + 0.5) * slicelength  # m
+            # theta ∈ [0, 2π) maps to z_relative ∈ [0, slicelength)
+            z_relative = theta / (2 * np.pi) * slicelength  # m
             z = z_relative + refposition + i * slicespacing  # m
 
             # Time: t ≈ z / c (valid for ultra-relativistic particles, β ≈ 1)
@@ -881,3 +882,479 @@ def read_genesis_distribution(
         t=t_arr, Q=Q_arr,
         extras={},
     )
+
+
+# ---------------------------------------------------------------------------
+# Genesis write helpers (private)
+# ---------------------------------------------------------------------------
+
+def _warn_or_raise(msg: str, mode: str) -> None:
+    if mode == "raise":
+        raise ValueError(msg)
+    elif mode == "warn":
+        warnings.warn(msg, UserWarning, stacklevel=4)
+
+
+def _resample_slice_particles(
+    arr6d: np.ndarray,
+    npart: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """
+    Resample a (N, 6) particle array [x, y, theta, px, py, gamma] to exactly
+    *npart* rows using the Genesis nearest-neighbour interpolation algorithm.
+
+    - If N >= npart: randomly delete rows down to npart.
+    - If N < npart: keep all N rows, add npart-N synthetic rows by interpolating
+      between each selected particle and its pre-computed nearest neighbour in
+      normalised 6-D space.  The theta column (index 2) is folded back to
+      [0, 2π) after interpolation.
+
+    Caller must ensure N >= 2.
+    """
+    arr = np.array(arr6d, dtype=float)
+    n = len(arr)
+
+    if n >= npart:
+        # Randomly thin down to npart
+        idx = rng.choice(n, size=npart, replace=False)
+        return arr[idx]
+
+    out = np.empty((npart, 6), dtype=float)
+    out[:n] = arr
+
+    # Normalise to zero-mean, unit-RMS in each dimension
+    avg = arr.mean(axis=0)
+    std = arr.std(axis=0)
+    std_inv = np.where(std == 0.0, 1.0, 1.0 / std)
+    arr_norm = (arr - avg) * std_inv
+
+    # Sort by theta (column 2) to localise the nearest-neighbour window
+    sort_idx = np.argsort(arr_norm[:, 2])
+    arr_norm = arr_norm[sort_idx]
+
+    # Pre-compute nearest neighbour for each of the N input particles
+    hw = min(1024, n - 1)
+    closest = np.empty(n, dtype=int)
+    for i in range(n):
+        lo = max(0, i - hw)
+        hi = min(n, i + hw)
+        diff = arr_norm[lo:hi] - arr_norm[i]
+        dist2 = np.einsum("ij,ij->i", diff, diff)
+        dist2[i - lo] = np.inf  # exclude self
+        closest[i] = lo + int(np.argmin(dist2))
+
+    # Add npart - n synthetic particles
+    for k in range(n, npart):
+        n1 = int(rng.integers(n))
+        n2 = int(closest[n1])
+        r = float(rng.random()) * 2.0 - 1.0  # uniform ∈ (-1, 1)
+        new_norm = 0.5 * (arr_norm[n1] + arr_norm[n2]) + r * (arr_norm[n1] - arr_norm[n2])
+        out[k] = new_norm / std_inv + avg
+
+    # Fold theta back to [0, 2π)
+    out[:, 2] = out[:, 2] % (2.0 * np.pi)
+    return out
+
+
+def _build_longitudinal_cdf(
+    z: np.ndarray,
+    q: np.ndarray,
+    *,
+    bin_width: float,
+    savgol_window: int = 17,
+    savgol_degree: int = 4,
+):
+    """
+    Build a smoothed cumulative distribution function of the longitudinal
+    charge profile.
+
+    Returns ``(Fx, Fx_inv)`` where:
+      - ``Fx(z)``   -> cumulative charge fraction in [0, 1]
+      - ``Fx_inv(u)`` -> z position for cumulative fraction u
+
+    Returns ``None`` if the distribution is empty or degenerate.
+    """
+    from scipy.interpolate import interp1d
+    from scipy.signal import savgol_filter
+
+    if len(z) < 2:
+        return None
+    z_min, z_max = float(z.min()), float(z.max())
+    if z_max <= z_min:
+        return None
+
+    n_bins = max(int((z_max - z_min) / bin_width), 4)
+    charge_hist, edges = np.histogram(z, bins=n_bins, weights=q)
+    ds = float(edges[1] - edges[0])
+
+    # Pad with zeros on each side to reduce boundary artefacts
+    pad = 9
+    ch_pad = np.concatenate(([0.0] * pad, charge_hist.astype(float), [0.0] * pad))
+
+    # Savitzky-Golay smoothing
+    win = min(savgol_window, len(ch_pad))
+    win = win if win % 2 == 1 else win - 1
+    win = max(win, 3)
+    poly = min(savgol_degree, win - 1)
+    ch_pad = savgol_filter(ch_pad, win, poly)
+    ch_pad = np.maximum(ch_pad, 0.0)
+
+    # Trim padding back to n_bins values; bin centres from original edges
+    ch_smooth = ch_pad[pad: pad + n_bins]
+    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+
+    total = float(ch_smooth.sum())
+    if total <= 0.0:
+        return None
+    ch_smooth /= total
+
+    # Build CDF: prepend a zero at (first_center - ds) so CDF starts at 0
+    z_cdf = np.concatenate(([bin_centers[0] - ds], bin_centers))
+    cdf = np.concatenate(([0.0], np.cumsum(ch_smooth)))
+    cdf[-1] = 1.0  # ensure exact 1
+
+    Fx = interp1d(z_cdf, cdf, kind="linear", bounds_error=False,
+                  fill_value=(0.0, 1.0))
+
+    # Deduplicate CDF values (can appear when smoothed bins are zero)
+    _, uid = np.unique(cdf, return_index=True)
+    Fx_inv = interp1d(cdf[uid], z_cdf[uid], kind="linear", bounds_error=False,
+                      fill_value=(float(z_cdf[0]), float(z_cdf[-1])))
+
+    return Fx, Fx_inv
+
+
+def _make_zero_current_slice(npart: int, gamma_ref: float) -> dict:
+    """Return arrays for a zero-current slice (data-format filler only)."""
+    return dict(
+        x=np.zeros(npart),
+        y=np.zeros(npart),
+        theta=np.linspace(0.0, 2.0 * np.pi, npart, endpoint=False),
+        px=np.zeros(npart),
+        py=np.zeros(npart),
+        gamma=np.full(npart, gamma_ref),
+        current=0.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Genesis write (public)
+# ---------------------------------------------------------------------------
+
+_TWO_PI = 2.0 * np.pi
+_ME_EV = g_m0 * g_c**2 / abs(g_e0)  # m_e c^2 in eV  ≈ 510998.95 eV
+
+
+def write_genesis_distribution(
+    dist: "ParticleDistribution",
+    filepath: Union[str, Path],
+    *,
+    lambda0: float,
+    s0: float,
+    slen: float,
+    npart: int = 4096,
+    sample: int = 1,
+    mpi_nproc: int = 1,
+    z0: Union[float, str, None] = None,
+    theta_method: Literal["direct", "hammersley", "penman"] = "direct",
+    smooth_current: bool = False,
+    min_particles: int = 2,
+    on_warning: Literal["silent", "warn", "raise"] = "warn",
+    version: int = 4,
+    seed: Optional[int] = None,
+) -> None:
+    """
+    Write a GENESIS 1.3 (v3/v4) HDF5 particle distribution file.
+
+    The beam is divided into time slices of width ``lambda0`` (the radiation
+    wavelength) spaced ``lambda0 * sample`` apart.  Each slice contains
+    exactly ``npart`` macro-particles described by
+    ``x, y, theta, px, py, gamma``.
+
+    Parameters
+    ----------
+    dist
+        Input particle distribution.
+    filepath
+        Output ``.h5`` file path.
+    lambda0
+        Radiation wavelength [m].
+    s0
+        Start of the time window [m].
+    slen
+        Length of the time window [m].
+    npart
+        Number of macro-particles per slice.  Default 4096.
+    sample
+        Slice spacing in units of ``lambda0`` (positive integer).
+        ``sample=1`` gives one slice per wavelength (densest).
+        Default 1.
+    mpi_nproc
+        Expected number of MPI processes.  The total slice count is rounded
+        up to the nearest multiple of ``mpi_nproc``.  Default 1.
+    z0
+        Longitudinal shift applied to the distribution before slicing.
+
+        - ``None``: no shift (default).
+        - ``float``: shift the charge-weighted centroid to this position.
+        - ``"auto"``: shift the leftmost particle to ``s0``.
+    theta_method
+        How particle phases (theta) within each slice are assigned.
+
+        - ``"direct"`` (default): theta computed directly from each
+          particle's z position within the slice.
+        - ``"hammersley"``: theta redistribution using a Halton
+          quasi-random sequence mapped through the smooth CDF.
+          Minimises initial shot noise; recommended for SASE FEL.
+        - ``"penman"``: same as ``"hammersley"`` but uses the Penman
+          (1992) regular-grid-plus-jitter method instead.
+
+        For ``"hammersley"`` and ``"penman"``, the smooth CDF is always
+        built regardless of ``smooth_current``.
+    smooth_current
+        If ``True``, compute slice currents from the Savitzky-Golay-
+        smoothed CDF instead of a direct particle count.  Automatically
+        ``True`` when ``theta_method != "direct"``.  Default ``False``.
+    min_particles
+        Minimum number of particles required in a slice to attempt
+        resampling.  Slices below this threshold are treated as
+        zero-current.  Default 2.
+    on_warning
+        How to handle recoverable issues (nslice adjustment, out-of-window
+        particles).
+
+        - ``"warn"`` (default): emit a ``UserWarning`` and proceed.
+        - ``"silent"``: proceed silently.
+        - ``"raise"``: raise ``ValueError``.
+    version
+        Genesis version (3 or 4).  Affects ``one4one`` flag and version
+        metadata written to the file.  Default 4.
+    seed
+        Random seed.  If ``None``, a random seed is chosen.
+    """
+    # ------------------------------------------------------------------
+    # 1. Parameter validation
+    # ------------------------------------------------------------------
+    if not isinstance(sample, int) or sample < 1:
+        raise ValueError(f"sample must be a positive integer, got {sample!r}.")
+    if not isinstance(mpi_nproc, int) or mpi_nproc < 1:
+        raise ValueError(f"mpi_nproc must be a positive integer, got {mpi_nproc!r}.")
+    if version not in (3, 4):
+        raise ValueError(f"version must be 3 or 4, got {version!r}.")
+    if theta_method not in ("direct", "hammersley", "penman"):
+        raise ValueError(
+            f"theta_method must be 'direct', 'hammersley', or 'penman', "
+            f"got {theta_method!r}."
+        )
+    if on_warning not in ("silent", "warn", "raise"):
+        raise ValueError(
+            f"on_warning must be 'silent', 'warn', or 'raise', "
+            f"got {on_warning!r}."
+        )
+
+    slicespacing = lambda0 * sample
+    slicelength = lambda0
+
+    # ------------------------------------------------------------------
+    # 2. Compute nslice
+    # ------------------------------------------------------------------
+    import math
+    n0 = math.ceil(slen / slicespacing)
+    if n0 % mpi_nproc != 0:
+        n0_adj = math.ceil(n0 / mpi_nproc) * mpi_nproc
+        _warn_or_raise(
+            f"nslice adjusted from {n0} to {n0_adj} to be a multiple of "
+            f"mpi_nproc={mpi_nproc}.",
+            on_warning,
+        )
+        n0 = n0_adj
+    nslice = n0
+
+    # ------------------------------------------------------------------
+    # 3. Extract arrays
+    # ------------------------------------------------------------------
+    z = dist.get_data("z").copy().astype(float)
+    x = dist.get_data("x").astype(float)
+    y = dist.get_data("y").astype(float)
+    px_evc = dist.get_data("px").astype(float)
+    py_evc = dist.get_data("py").astype(float)
+    pz_evc = dist.get_data("pz").astype(float)
+    Q_abs = np.abs(dist.get_data("Q").astype(float))
+
+    px_norm = px_evc / _ME_EV
+    py_norm = py_evc / _ME_EV
+    p_abs_norm = np.sqrt(px_norm**2 + py_norm**2 + (pz_evc / _ME_EV)**2)
+    gamma = np.sqrt(1.0 + p_abs_norm**2)
+
+    Qb = float(Q_abs.sum())
+    w = Q_abs
+    gamma_ref = float(np.average(gamma, weights=w))
+
+    # ------------------------------------------------------------------
+    # 4. Apply z0 offset
+    # ------------------------------------------------------------------
+    if z0 is not None:
+        if isinstance(z0, str):
+            if z0 == "auto":
+                z_shift = s0 - float(z.min())
+            else:
+                raise ValueError(f"z0 string must be 'auto', got {z0!r}.")
+        else:
+            z_mean = float(np.average(z, weights=w))
+            z_shift = float(z0) - z_mean
+        z = z + z_shift
+
+    # ------------------------------------------------------------------
+    # 5. Check window bounds
+    # ------------------------------------------------------------------
+    s1 = s0 + slen
+    mask_out = (z < s0) | (z >= s1)
+    n_out = int(mask_out.sum())
+    if n_out > 0:
+        _warn_or_raise(
+            f"{n_out} particles are outside the window [s0, s0+slen] and "
+            f"will not appear in any slice.",
+            on_warning,
+        )
+
+    # ------------------------------------------------------------------
+    # 6. Build CDF if needed
+    # ------------------------------------------------------------------
+    need_cdf = smooth_current or theta_method in ("hammersley", "penman")
+    cdf_result = None
+    if need_cdf:
+        mask_in = ~mask_out
+        cdf_result = _build_longitudinal_cdf(
+            z[mask_in], Q_abs[mask_in],
+            bin_width=lambda0 / 10.0,
+        )
+        if cdf_result is None:
+            _warn_or_raise(
+                "Could not build longitudinal CDF (too few particles or "
+                "degenerate distribution). Falling back to direct current "
+                "and theta computation.",
+                on_warning,
+            )
+            need_cdf = False
+            smooth_current = False
+        else:
+            Fx, Fx_inv = cdf_result
+
+    # ------------------------------------------------------------------
+    # 7. RNG and Halton setup
+    # ------------------------------------------------------------------
+    if seed is None:
+        seed = int(np.random.randint(0, 2**31))
+    rng = np.random.default_rng(seed)
+
+    halton_samples: Optional[np.ndarray] = None
+    halton_idx = 0
+    if theta_method == "hammersley":
+        from scipy.stats.qmc import Halton
+        halton = Halton(d=1, scramble=True, seed=seed)
+        halton_samples = halton.random(nslice * npart).ravel()
+
+    # ------------------------------------------------------------------
+    # 8. Write HDF5 file
+    # ------------------------------------------------------------------
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    with h5py.File(filepath, "w") as f:
+        for islice in range(nslice):
+            slice_left = s0 + islice * slicespacing
+            slice_right = slice_left + slicelength
+
+            mask_slice = (z >= slice_left) & (z < slice_right)
+            n_in = int(mask_slice.sum())
+
+            slicename = f"/slice{islice + 1:06d}/"
+
+            if n_in < min_particles:
+                sd = _make_zero_current_slice(npart, gamma_ref)
+            else:
+                # ---- current ----
+                if need_cdf and cdf_result is not None:
+                    dF = float(Fx(slice_right)) - float(Fx(slice_left))
+                    current = dF * Qb / (slicelength / g_c)
+                else:
+                    current = float(Q_abs[mask_slice].sum()) / (slicelength / g_c)
+
+                # ---- build 6-D array for resampling ----
+                z_sl = z[mask_slice]
+                theta_raw = (z_sl - slice_left) / slicelength * _TWO_PI
+                theta_raw = np.clip(theta_raw, 0.0, _TWO_PI * (1.0 - 1e-15))
+
+                arr6d = np.column_stack([
+                    x[mask_slice],
+                    y[mask_slice],
+                    theta_raw,
+                    px_norm[mask_slice],
+                    py_norm[mask_slice],
+                    gamma[mask_slice],
+                ])
+                resampled = _resample_slice_particles(arr6d, npart, rng)
+
+                x_out    = resampled[:, 0]
+                y_out    = resampled[:, 1]
+                theta_rs = resampled[:, 2]  # already folded to [0, 2π)
+                px_out   = resampled[:, 3]
+                py_out   = resampled[:, 4]
+                gamma_out = resampled[:, 5]
+
+                # ---- theta assignment ----
+                if theta_method == "direct":
+                    theta_out = theta_rs
+
+                else:
+                    # Generate uniform samples ∈ [0, 1)
+                    if theta_method == "hammersley":
+                        samp = halton_samples[halton_idx: halton_idx + npart]
+                        halton_idx += npart
+                    else:  # penman
+                        Ne_sl = (current * slicelength / g_c / abs(g_e0)
+                                 if current > 0 else float(npart))
+                        r0 = (np.arange(1, npart + 1) - 0.5) / npart
+                        delta_p = np.sqrt(3.0 * npart / max(Ne_sl, 1.0))
+                        dr = (rng.random(npart) * 2.0 - 1.0) * delta_p / _TWO_PI
+                        samp = (r0 + dr) % 1.0
+
+                    # Map through CDF to theta
+                    Fa = float(Fx(slice_left))
+                    Fb = float(Fx(slice_right))
+                    dF = Fb - Fa
+                    if dF > 0.0:
+                        z_new = Fx_inv(Fa + samp * dF).astype(float)
+                        z_new = np.clip(z_new, slice_left, slice_right)
+                        theta_new = (z_new - slice_left) / slicelength * _TWO_PI
+                        theta_new = np.clip(theta_new, 0.0, _TWO_PI * (1.0 - 1e-15))
+                    else:
+                        theta_new = rng.random(npart) * _TWO_PI
+
+                    # Sort-and-replace: preserve rank of resampled theta
+                    rank = np.argsort(theta_rs)
+                    theta_out = np.empty(npart)
+                    theta_out[rank] = np.sort(theta_new)
+
+                sd = dict(x=x_out, y=y_out, theta=theta_out,
+                          px=px_out, py=py_out, gamma=gamma_out,
+                          current=current)
+
+            f.create_dataset(slicename + "current", data=[sd["current"]])
+            f.create_dataset(slicename + "x",       data=sd["x"])
+            f.create_dataset(slicename + "y",       data=sd["y"])
+            f.create_dataset(slicename + "theta",   data=sd["theta"])
+            f.create_dataset(slicename + "px",      data=sd["px"])
+            f.create_dataset(slicename + "py",      data=sd["py"])
+            f.create_dataset(slicename + "gamma",   data=sd["gamma"])
+
+        # Root datasets
+        f.create_dataset("slicelength",  data=[slicelength])
+        f.create_dataset("slicespacing", data=[slicespacing])
+        f.create_dataset("refposition",  data=[s0])
+        f.create_dataset("slicecount",   data=[nslice])
+        f.create_dataset("beamletsize",  data=[16])
+        f.create_dataset("one4one",      data=[0])
+        if version == 4:
+            f.create_dataset("/Meta/Version/Major", data=[4.0])

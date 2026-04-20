@@ -946,6 +946,10 @@ class ParticleDistribution3D:
     def current_profile_z(self) -> tuple[np.ndarray, np.ndarray]:
         return current_profile_z(self)
 
+    @property
+    def current_profile_z_smooth(self) -> tuple[np.ndarray, np.ndarray]:
+        return current_profile_z(self, smooth=True)
+
 
     #%% legacy properties
     @property
