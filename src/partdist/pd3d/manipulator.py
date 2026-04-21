@@ -2025,6 +2025,246 @@ def apply_matrix_6d(
     return _apply_transport_matrix_core(out, M, _get_weight_array(out, weight, absolute=True))
 
 
+# ---------------------------------------------------------------------------
+# Core extraction — public functions
+# ---------------------------------------------------------------------------
+
+_ELLIPSE_DEFAULT_PLANES = [("x", "xp"), ("y", "yp"), ("z", "delta")]
+
+
+def extract_core_sigma_clip(
+    dist: "ParticleDistribution",
+    n_sigma: float = 3.0,
+    *,
+    max_iter: int = 20,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+) -> "ParticleDistribution":
+    """
+    Extract beam core by iterative longitudinal sigma clipping.
+
+    In each iteration the weighted centroid and σ_z are recomputed;
+    particles with |z − z̄| > ``n_sigma`` · σ_z are removed.  Iteration
+    stops when no particles are removed or *max_iter* is reached.
+
+    Parameters
+    ----------
+    dist
+        Input distribution.
+    n_sigma
+        Clipping half-width in units of σ_z.  Default 3.
+    max_iter
+        Maximum number of iterations.  Default 20.
+    weight
+        Weight array or quantity key.  Default ``"Q_abs"``.
+    """
+    if n_sigma <= 0:
+        raise ValueError(f"n_sigma must be positive, got {n_sigma!r}.")
+    if max_iter < 1:
+        raise ValueError(f"max_iter must be >= 1, got {max_iter!r}.")
+    current = dist
+    for _ in range(max_iter):
+        z = current.get_data("z").astype(float)
+        w = _get_weight_array(current, weight, absolute=True)
+        z_mean = float(np.average(z, weights=w))
+        z_std  = float(np.sqrt(np.average((z - z_mean) ** 2, weights=w)))
+        mask = np.abs(z - z_mean) <= n_sigma * z_std
+        if mask.all():
+            break
+        current = current.slice(mask)
+    return current
+
+
+def extract_core_percentile(
+    dist: "ParticleDistribution",
+    percentile: float = 90.0,
+    *,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+) -> "ParticleDistribution":
+    """
+    Extract beam core by charge-percentile truncation.
+
+    Particles are ranked by distance from the longitudinal centroid
+    |z − z̄|.  The closest ones are kept until ``percentile``% of the
+    total charge is reached.
+
+    Parameters
+    ----------
+    dist
+        Input distribution.
+    percentile
+        Fraction of total charge to retain, in (0, 100].  Default 90.
+    weight
+        Weight array or quantity key.  Default ``"Q_abs"``.
+    """
+    if not (0.0 < percentile <= 100.0):
+        raise ValueError(f"percentile must be in (0, 100], got {percentile!r}.")
+    z = dist.get_data("z").astype(float)
+    w = _get_weight_array(dist, weight, absolute=True)
+    z_mean = float(np.average(z, weights=w))
+    idx_sorted = np.argsort(np.abs(z - z_mean))
+    cumcharge = np.cumsum(w[idx_sorted])
+    cutoff = percentile / 100.0 * cumcharge[-1]
+    n_keep = min(int(np.searchsorted(cumcharge, cutoff, side="right")) + 1, len(z))
+    mask = np.zeros(len(z), dtype=bool)
+    mask[idx_sorted[:n_keep]] = True
+    return dist.slice(mask)
+
+
+def extract_core_current_threshold(
+    dist: "ParticleDistribution",
+    threshold: float = 0.1,
+    *,
+    n_slices: int = 100,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+) -> "ParticleDistribution":
+    """
+    Extract beam core by current-profile threshold.
+
+    A current profile is built from *n_slices* z bins.  Particles that
+    fall in bins where I(z) >= ``threshold`` · I_peak are retained.
+
+    Parameters
+    ----------
+    dist
+        Input distribution.
+    threshold
+        Fraction of peak current used as the cut-off, in (0, 1].
+        Default 0.1.
+    n_slices
+        Number of z bins for the current profile.  Default 100.
+    weight
+        Weight array or quantity key.  Default ``"Q_abs"``.
+    """
+    if not (0.0 < threshold <= 1.0):
+        raise ValueError(f"threshold must be in (0, 1], got {threshold!r}.")
+    if n_slices < 2:
+        raise ValueError(f"n_slices must be >= 2, got {n_slices!r}.")
+    z = dist.get_data("z").astype(float)
+    w = _get_weight_array(dist, weight, absolute=True)
+    edges = np.linspace(z.min(), z.max(), n_slices + 1)
+    bin_width = (z.max() - z.min()) / n_slices
+    bin_charge = np.array([w[(z >= edges[i]) & (z < edges[i + 1])].sum()
+                           for i in range(n_slices)])
+    current_profile = bin_charge / bin_width
+    I_peak = current_profile.max()
+    if I_peak == 0:
+        return dist
+    above = current_profile >= threshold * I_peak
+    bin_idx = np.clip(np.searchsorted(edges[1:], z, side="left"), 0, n_slices - 1)
+    return dist.slice(above[bin_idx])
+
+
+def extract_core_ellipse(
+    dist: "ParticleDistribution",
+    n_sigma: float = 3.0,
+    *,
+    planes: "Optional[list[tuple[str, str]]]" = None,
+    max_iter: int = 20,
+    weight: Union[None, str, ArrayLike] = "Q_abs",
+) -> "ParticleDistribution":
+    """
+    Extract beam core by iterative Mahalanobis ellipse clipping.
+
+    For each specified phase-space plane the weighted 2×2 covariance
+    matrix Σ is computed and particles with Mahalanobis distance
+    d = sqrt(vᵀ Σ⁻¹ v) > ``n_sigma`` are removed.  Masks from all
+    planes are intersected.  Iteration stops when no particles are
+    removed or *max_iter* is reached.
+
+    Parameters
+    ----------
+    dist
+        Input distribution.
+    n_sigma
+        Ellipse radius in σ units.  Default 3.
+    planes
+        List of ``(key1, key2)`` quantity pairs defining the planes.
+        Default ``[("x", "xp"), ("y", "yp"), ("z", "delta")]``.
+    max_iter
+        Maximum number of iterations.  Default 20.
+    weight
+        Weight array or quantity key.  Default ``"Q_abs"``.
+    """
+    if n_sigma <= 0:
+        raise ValueError(f"n_sigma must be positive, got {n_sigma!r}.")
+    if max_iter < 1:
+        raise ValueError(f"max_iter must be >= 1, got {max_iter!r}.")
+    if planes is None:
+        planes = _ELLIPSE_DEFAULT_PLANES
+    current = dist
+    for _ in range(max_iter):
+        w = _get_weight_array(current, weight, absolute=True)
+        combined = np.ones(len(current.get_data("x")), dtype=bool)
+        for key1, key2 in planes:
+            v1 = current.get_data(key1).astype(float)
+            v2 = current.get_data(key2).astype(float)
+            m1 = float(np.average(v1, weights=w))
+            m2 = float(np.average(v2, weights=w))
+            d1 = v1 - m1
+            d2 = v2 - m2
+            s11 = float(np.average(d1 ** 2,      weights=w))
+            s12 = float(np.average(d1 * d2,      weights=w))
+            s22 = float(np.average(d2 ** 2,      weights=w))
+            det = s11 * s22 - s12 ** 2
+            if det <= 0:
+                continue
+            maha2 = (s22 * d1 ** 2 - 2.0 * s12 * d1 * d2 + s11 * d2 ** 2) / det
+            combined &= maha2 <= n_sigma ** 2
+        if combined.all():
+            break
+        current = current.slice(combined)
+    return current
+
+
+def extract_core_profile_fit(
+    dist: "ParticleDistribution",
+    n_sigma: float = 2.0,
+    *,
+    profile: str = "gaussian",
+    fit_threshold: float = 0.05,
+    fit_weights: str = "uniform",
+) -> "ParticleDistribution":
+    """
+    Extract beam core by fitting a model profile to I(z) and keeping
+    particles within ``n_sigma`` of the fitted width.
+
+    The smooth current profile (``dist.current_profile_z_smooth``) is used
+    for fitting.
+
+    Parameters
+    ----------
+    dist
+        Input distribution.
+    n_sigma
+        Half-width of the acceptance window in units of the fitted σ.
+        Default 2.
+    profile
+        ``"gaussian"`` or ``"parabola"``.  See
+        :func:`~partdist.pd3d.analysis.fit_current_profile`.
+    fit_threshold
+        Bins below ``fit_threshold · I_peak`` are excluded from the fit.
+        Default 0.05.
+    fit_weights
+        Weighting scheme passed to
+        :func:`~partdist.pd3d.analysis.fit_current_profile`.
+        Default ``"uniform"``.
+    """
+    from .analysis import fit_current_profile
+
+    if n_sigma <= 0:
+        raise ValueError(f"n_sigma must be positive, got {n_sigma!r}.")
+
+    z_smo, I_smo = dist.current_profile_z_smooth
+    if I_smo.max() == 0:
+        return dist
+
+    res = fit_current_profile(z_smo, I_smo, profile,
+                              fit_threshold=fit_threshold,
+                              fit_weights=fit_weights)
+    z = dist.get_data("z").astype(float)
+    return dist.slice(np.abs(z - res.z0) <= n_sigma * res.sigma)
+
+
 
 
 

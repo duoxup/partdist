@@ -663,3 +663,110 @@ def plot_binned_profile(
         ax.set_ylabel(ylabel)
 
     return fig, ax, line, profile
+
+
+def plot_current_profile_pd3d(
+    dist: ParticleDistribution,
+    *,
+    fig=None,
+    ax=None,
+    show_smooth: bool = True,
+    show_gaussian_fit: bool = True,
+    show_parabola_fit: bool = True,
+    fit_threshold: float = 0.05,
+    fit_weights: str = "uniform",
+) -> tuple:
+    """
+    Plot the longitudinal current profile with optional smooth and fit curves.
+
+    Draws up to four curves on the same axes:
+
+    * **raw**       — ``dist.current_profile_z`` (blue, semi-transparent)
+    * **smooth**    — ``dist.current_profile_z_smooth`` (black)
+    * **Gaussian**  — Gaussian fit to the smooth profile (red dashed)
+    * **parabola**  — inverted-parabola fit to the smooth profile (green dashed)
+
+    The axes title shows I_peak and σ for each curve that is displayed.
+
+    Parameters
+    ----------
+    dist
+        Input :class:`ParticleDistribution`.
+    fig, ax
+        Optional existing figure / axes.
+    show_smooth
+        Whether to draw the smoothed curve.  Default ``True``.
+    show_gaussian_fit
+        Whether to draw the Gaussian fit.  Default ``True``.
+    show_parabola_fit
+        Whether to draw the inverted-parabola fit.  Default ``True``.
+    fit_threshold
+        Bins below ``fit_threshold · I_peak`` are excluded from the fit.
+        Default 0.05.
+    fit_weights
+        Weighting scheme passed to :func:`~partdist.pd3d.analysis.fit_current_profile`.
+        ``"uniform"`` (default), ``"current"``, or ``"current_sq"``.
+
+    Returns
+    -------
+    fig, ax
+        Matplotlib figure and axes.
+    """
+    from .analysis import fit_current_profile
+
+    fig, ax = xtils.ensure_fig_ax(fig, ax)
+
+    # ── raw and smooth profiles via dist properties ────────────────────
+    z_raw, I_raw = dist.current_profile_z
+    ax.plot(z_raw * 1e3, I_raw,
+            color="steelblue", lw=0.8, alpha=0.5, label="raw")
+
+    z_smo, I_smo = dist.current_profile_z_smooth
+    if show_smooth:
+        ax.plot(z_smo * 1e3, I_smo,
+                color="black", lw=1.5, label="smooth")
+
+    # ── fits (applied to the smooth profile) ──────────────────────────
+    fit_results = {}
+    fit_styles  = {
+        "gaussian": dict(color="red",   ls="--", lw=1.5),
+        "parabola": dict(color="green", ls="--", lw=1.5),
+    }
+    for pname, show in [("gaussian", show_gaussian_fit),
+                        ("parabola", show_parabola_fit)]:
+        if not show:
+            continue
+        res = fit_current_profile(z_smo, I_smo, pname,
+                                  fit_threshold=fit_threshold,
+                                  fit_weights=fit_weights)
+        fit_results[pname] = res
+        label = f"{pname} fit" + ("" if res.success else " (fallback)")
+        ax.plot(res.z_curve * 1e3, res.I_curve,
+                label=label, **fit_styles[pname])
+
+    ax.set_xlabel("z [mm]")
+    ax.set_ylabel("I [A]")
+    ax.axhline(0, color="k", lw=0.4, ls=":")
+    ax.legend(fontsize=8)
+
+    # ── title ──────────────────────────────────────────────────────────
+    def _fmt_peak_sig(I_arr, res=None):
+        I_pk = float(np.max(I_arr))
+        parts = [f"I_peak={I_pk:.1f} A"]
+        if res is not None:
+            parts.append(f"σ={res.sigma * 1e3:.3f} mm")
+        return ",  ".join(parts)
+
+    title_lines = [f"raw: {_fmt_peak_sig(I_raw)}"]
+    if show_smooth:
+        title_lines.append(f"smooth: {_fmt_peak_sig(I_smo)}")
+    for pname in ("gaussian", "parabola"):
+        if pname in fit_results:
+            r = fit_results[pname]
+            title_lines.append(
+                f"{pname}: I_peak={r.amplitude:.1f} A,  σ={r.sigma * 1e3:.3f} mm"
+                + ("" if r.success else "  [fit failed]")
+            )
+    ax.set_title("\n".join(title_lines), fontsize=8)
+
+    return fig, ax

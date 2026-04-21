@@ -1394,6 +1394,193 @@ def current_profile_z(
     return z_centers, lambda_z * v_rep  # [A]
 
 
+# ---------------------------------------------------------------------------
+# Current-profile fitting
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CurrentProfileFitResult:
+    """Result of a 1-D current-profile fit."""
+    profile:   str           # "gaussian" or "parabola"
+    z0:        float         # fitted centre [m]
+    sigma:     float         # RMS-equivalent width [m]
+    amplitude: float         # fitted peak current [A]
+    z_curve:   np.ndarray    # dense z array for plotting [m]
+    I_curve:   np.ndarray    # fitted I(z) values [A]
+    success:   bool          # True if scipy.optimize converged
+
+
+def fit_current_profile(
+    z_centers: np.ndarray,
+    I_z: np.ndarray,
+    profile: str = "gaussian",
+    *,
+    fix_peak: bool = True,
+    fit_threshold: float = 0.05,
+    fit_weights: str = "uniform",
+    n_curve: int = 500,
+) -> CurrentProfileFitResult:
+    """
+    Fit a 1-D model to a current profile I(z).
+
+    Parameters
+    ----------
+    z_centers
+        Bin-centre positions [m].
+    I_z
+        Current values at each bin [A].
+    profile
+        ``"gaussian"``  — fits A · exp(−(z−z₀)²/(2σ²)).
+        ``"parabola"``  — fits A · max(1−((z−z₀)/w)², 0); the returned
+        *sigma* is the RMS-equivalent width w/√3.
+    fix_peak
+        If ``True`` (default), the amplitude A and centre z₀ are fixed to
+        the observed peak of *I_z* before fitting; only the width σ (or w)
+        is a free parameter.  This anchors the fitted curve to the actual
+        peak and avoids tail-driven shifts of A and z₀.
+        If ``False``, all three parameters are fitted freely.
+    fit_threshold
+        Bins below ``fit_threshold · max(I_z)`` are excluded from the
+        fit to suppress tail noise.  Default 0.05.
+    fit_weights
+        Weighting scheme for the least-squares fit (ignored when
+        *fix_peak* is ``True`` with only one free parameter).
+
+        ``"uniform"``  — equal weights (standard OLS).
+        ``"current"``  — weight ∝ I(z), i.e. ``sigma = 1/sqrt(I+ε)``;
+                         residuals near the peak dominate.  Default.
+        ``"current_sq"`` — weight ∝ I(z)², i.e. ``sigma = 1/(I+ε)``;
+                           even stronger peak sensitivity.
+    n_curve
+        Number of points in the returned smooth curve.  Default 500.
+
+    Returns
+    -------
+    CurrentProfileFitResult
+    """
+    from scipy.optimize import curve_fit
+
+    if profile not in ("gaussian", "parabola"):
+        raise ValueError(f"profile must be 'gaussian' or 'parabola', got {profile!r}.")
+    if fit_weights not in ("uniform", "current", "current_sq"):
+        raise ValueError(
+            f"fit_weights must be 'uniform', 'current', or 'current_sq', "
+            f"got {fit_weights!r}."
+        )
+
+    z_centers = np.asarray(z_centers, dtype=float)
+    I_z       = np.asarray(I_z,       dtype=float)
+    I_peak    = float(I_z.max())
+
+    # Initial guesses from weighted moments.
+    safe_I = np.maximum(I_z, 0.0)
+    W = safe_I.sum()
+    if W > 0:
+        z0_guess  = float(np.dot(safe_I, z_centers) / W)
+        sig_guess = float(np.sqrt(np.dot(safe_I, (z_centers - z0_guess) ** 2) / W))
+    else:
+        z0_guess  = float(z_centers.mean())
+        sig_guess = float((z_centers[-1] - z_centers[0]) / 4)
+    if sig_guess == 0:
+        sig_guess = float((z_centers[-1] - z_centers[0]) / 4) or 1e-6
+
+    # When fix_peak=True, anchor A and z0 to the observed peak.
+    peak_idx = int(np.argmax(I_z))
+    amp_fixed = I_peak
+    z0_fixed  = float(z_centers[peak_idx])
+
+    fit_mask = I_z >= fit_threshold * I_peak
+    zf, If = z_centers[fit_mask], I_z[fit_mask]
+
+    # Build sigma array for weighted least squares.
+    eps = 1e-6 * max(I_peak, 1.0)
+    if fit_weights == "uniform":
+        sigma_w = None
+    elif fit_weights == "current":
+        sigma_w = 1.0 / np.sqrt(np.maximum(If, 0.0) + eps)
+    else:  # current_sq
+        sigma_w = 1.0 / (np.maximum(If, 0.0) + eps)
+
+    success = True
+    try:
+        if profile == "gaussian":
+            if fix_peak:
+                def _gauss_w(z_, sig):
+                    return amp_fixed * np.exp(-0.5 * ((z_ - z0_fixed) / sig) ** 2)
+                popt, _ = curve_fit(
+                    _gauss_w, zf, If,
+                    p0=[sig_guess],
+                    sigma=sigma_w, absolute_sigma=False,
+                    bounds=([1e-12], [np.inf]),
+                    maxfev=5000,
+                )
+                z0_fit, sig_fit, amp_fit = z0_fixed, abs(float(popt[0])), amp_fixed
+            else:
+                def _gauss(z_, A, z0, sig):
+                    return A * np.exp(-0.5 * ((z_ - z0) / sig) ** 2)
+                popt, _ = curve_fit(
+                    _gauss, zf, If,
+                    p0=[I_peak, z0_guess, sig_guess],
+                    sigma=sigma_w, absolute_sigma=False,
+                    bounds=([0, z_centers.min(), 1e-12],
+                            [np.inf, z_centers.max(), np.inf]),
+                    maxfev=5000,
+                )
+                z0_fit, sig_fit, amp_fit = float(popt[1]), abs(float(popt[2])), float(popt[0])
+
+        else:  # parabola
+            if fix_peak:
+                def _parabola_w(z_, w_):
+                    return amp_fixed * np.maximum(
+                        1.0 - ((z_ - z0_fixed) / w_) ** 2, 0.0)
+                popt, _ = curve_fit(
+                    _parabola_w, zf, If,
+                    p0=[sig_guess * np.sqrt(3)],
+                    sigma=sigma_w, absolute_sigma=False,
+                    bounds=([1e-12], [np.inf]),
+                    maxfev=5000,
+                )
+                z0_fit  = z0_fixed
+                sig_fit = abs(float(popt[0])) / np.sqrt(3)
+                amp_fit = amp_fixed
+            else:
+                def _parabola(z_, A, z0, w_):
+                    return A * np.maximum(1.0 - ((z_ - z0) / w_) ** 2, 0.0)
+                popt, _ = curve_fit(
+                    _parabola, zf, If,
+                    p0=[I_peak, z0_guess, sig_guess * np.sqrt(3)],
+                    sigma=sigma_w, absolute_sigma=False,
+                    bounds=([0, z_centers.min(), 1e-12],
+                            [np.inf, z_centers.max(), np.inf]),
+                    maxfev=5000,
+                )
+                z0_fit  = float(popt[1])
+                sig_fit = abs(float(popt[2])) / np.sqrt(3)
+                amp_fit = float(popt[0])
+
+    except RuntimeError:
+        success  = False
+        z0_fit   = z0_fixed if fix_peak else z0_guess
+        sig_fit  = sig_guess
+        amp_fit  = amp_fixed if fix_peak else I_peak
+
+    z_dense = np.linspace(z_centers[0], z_centers[-1], n_curve)
+    if profile == "gaussian":
+        I_dense = amp_fit * np.exp(-0.5 * ((z_dense - z0_fit) / sig_fit) ** 2)
+    else:
+        I_dense = amp_fit * np.maximum(1.0 - ((z_dense - z0_fit) / (sig_fit * np.sqrt(3))) ** 2, 0.0)
+
+    return CurrentProfileFitResult(
+        profile=profile,
+        z0=z0_fit,
+        sigma=sig_fit,
+        amplitude=amp_fit,
+        z_curve=z_dense,
+        I_curve=I_dense,
+        success=success,
+    )
+
+
 
 
 
