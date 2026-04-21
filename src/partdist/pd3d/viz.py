@@ -294,6 +294,11 @@ def hist2d_pd3d(
         **pcolormesh_kwargs,
     )
 
+    x_pad = 0.15 * (xedges[-1] - xedges[0])
+    y_pad = 0.15 * (yedges[-1] - yedges[0])
+    ax.set_xlim(xedges[0] - x_pad, xedges[-1] + x_pad)
+    ax.set_ylim(yedges[0] - y_pad, yedges[-1] + y_pad)
+
     ax.set_xlabel(_label_from_key(dist, x, unit_override=xunit_scaled) if xlabel is None else xlabel)
     ax.set_ylabel(_label_from_key(dist, y, unit_override=yunit_scaled) if ylabel is None else ylabel)
 
