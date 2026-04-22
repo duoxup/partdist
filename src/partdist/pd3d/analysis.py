@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Literal, Optional, Sequence, Union, TYPE_CHECKING
+from dataclasses import dataclass, asdict, field
+from typing import Callable, Dict, Literal, Optional, Sequence, Union, TYPE_CHECKING
 
 import numpy as np
 from scipy.interpolate import UnivariateSpline
@@ -1581,8 +1581,210 @@ def fit_current_profile(
     )
 
 
+# ---------------------------------------------------------------------------
+# Unified beam diagnostics
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BeamDiagnosticsResult:
+    """
+    Comprehensive beam statistics returned by :func:`compute_beam_diagnostics`.
+
+    All quantities are in SI base units (m, rad, eV, A, C) unless noted.
+    Fields related to particle survival are ``None`` when the input
+    distribution carries no ``status`` quantity.
+    """
+
+    # ── particle count & charge ───────────────────────────────────────
+    n_total:             int     # total macroparticles (incl. lost)
+    n_alive:             int     # alive macroparticles used for physics
+    n_lost:              Optional[int]    # None → no status available
+    Q_total_C:           float            # total |charge| [C]
+    Q_alive_C:           float            # alive |charge| [C]
+    Q_lost_C:            Optional[float]  # None → no status available
+
+    # ── relativistic ─────────────────────────────────────────────────
+    gamma0:              float   # mean Lorentz factor
+    beta0:               float   # mean relativistic beta
+    mean_E_kin_eV:       float   # mean kinetic energy [eV]
+    sig_E_kin_eV:        float   # RMS energy spread [eV]
+    sig_E_rel:           float   # sig_E / E_mean (dimensionless)
+
+    # ── energy spread decomposition ───────────────────────────────────
+    sig_E_corr_eV:       float   # linear correlated energy spread [eV]
+    sig_E_uncorr_eV:     float   # slice-based uncorrelated energy spread [eV]
+    sig_E_slice_max_eV:  float   # max single-slice energy spread [eV]
+
+    # ── transverse x ─────────────────────────────────────────────────
+    mean_x:              float   # [m]
+    sig_x:               float   # [m]
+    mean_xp:             float   # [rad]
+    sig_xp:              float   # [rad]
+    emit_x:              float   # geometric emittance [m·rad]
+    nemit_x:             float   # normalised emittance [m·rad]
+    alpha_x:             float
+    beta_x:              float   # Twiss beta [m]
+
+    # ── transverse y ─────────────────────────────────────────────────
+    mean_y:              float   # [m]
+    sig_y:               float   # [m]
+    mean_yp:             float   # [rad]
+    sig_yp:              float   # [rad]
+    emit_y:              float   # geometric emittance [m·rad]
+    nemit_y:             float   # normalised emittance [m·rad]
+    alpha_y:             float
+    beta_y:              float   # Twiss beta [m]
+
+    # ── longitudinal ─────────────────────────────────────────────────
+    mean_z:              float   # [m]
+    sig_z:               float   # [m]
+    chirp:               float   # dδ/dz [m⁻¹]
+    quadratic_chirp:     float   # [m⁻²]
+    cubic_chirp:         float   # [m⁻³]
+
+    # ── current ───────────────────────────────────────────────────────
+    I_peak_raw:          float   # [A]
+    I_peak_smooth:       float   # [A]
+
+    def to_dict(self) -> Dict[str, object]:
+        """Return all fields as a plain dictionary."""
+        return asdict(self)
 
 
+def _compute_slice_energy_spread(
+    dist: "ParticleDistribution",
+    n_slices: int,
+) -> tuple[float, float]:
+    """Return (sig_E_uncorr_eV, sig_E_slice_max_eV) via slice decomposition."""
+    z = dist.get_data("z").astype(float)
+    e = dist.get_data("kinetic_energy_eV").astype(float)
+    w = np.abs(dist.get_data("Q").astype(float))
+    edges = np.linspace(z.min(), z.max(), n_slices + 1)
+    slice_stats: list[tuple[float, float]] = []  # (variance, weight)
+    max_sig = 0.0
+    for i in range(n_slices):
+        mask = (z >= edges[i]) & (z < edges[i + 1])
+        if mask.sum() < 5:
+            continue
+        wi = w[mask]
+        W = float(wi.sum())
+        if W == 0.0:
+            continue
+        ei = e[mask]
+        mean_e = float(np.average(ei, weights=wi))
+        var = float(np.average((ei - mean_e) ** 2, weights=wi))
+        slice_stats.append((var, W))
+        sig = float(np.sqrt(var))
+        if sig > max_sig:
+            max_sig = sig
+    if not slice_stats:
+        return 0.0, 0.0
+    total_W = sum(W for _, W in slice_stats)
+    uncorr = float(np.sqrt(sum(v * W for v, W in slice_stats) / total_W))
+    return uncorr, max_sig
+
+
+def compute_beam_diagnostics(
+    dist: "ParticleDistribution",
+    *,
+    n_slices_energy: int = 50,
+) -> BeamDiagnosticsResult:
+    """
+    Compute a comprehensive set of beam statistics and return them as a
+    :class:`BeamDiagnosticsResult`.
+
+    If the distribution carries a ``status`` quantity (as written by Astra),
+    particles with ``status < 0`` are treated as lost: survival statistics
+    are computed from the full distribution and all physics quantities are
+    evaluated on the alive subset only.  Without ``status``, all particles
+    are treated as alive and the survival fields are ``None``.
+
+    Parameters
+    ----------
+    dist
+        Input distribution (may include lost particles with status < 0).
+    n_slices_energy
+        Number of z slices for slice energy-spread decomposition.
+        Default 50.
+
+    Returns
+    -------
+    BeamDiagnosticsResult
+    """
+    # ── survival split ────────────────────────────────────────────────
+    if "status" in dist.extra_quantity_keys:
+        mask_alive = dist.get_data("status").astype(int) >= 0
+        d = dist.slice(mask_alive)
+        n_lost   = int((~mask_alive).sum())
+        Q_lost_C = float(np.abs(dist.get_data("Q")[~mask_alive]).sum())
+        n_lost_out:  Optional[int]   = n_lost
+        Q_lost_out:  Optional[float] = Q_lost_C
+    else:
+        d = dist
+        n_lost_out  = None
+        Q_lost_out  = None
+
+    n_total  = len(dist.get_data("x"))
+    n_alive  = len(d.get_data("x"))
+    Q_total  = float(np.abs(dist.get_data("Q")).sum())
+    Q_alive  = float(d.total_charge_abs)
+
+    # ── relativistic ─────────────────────────────────────────────────
+    mean_E   = d.mean("kinetic_energy_eV")
+    sig_E    = d.std("kinetic_energy_eV")
+
+    # ── energy spread decomposition ───────────────────────────────────
+    sig_E_uncorr, sig_E_slice_max = _compute_slice_energy_spread(d, n_slices_energy)
+
+    # ── transverse ───────────────────────────────────────────────────
+    _, I_smo = d.current_profile_z_smooth
+
+    return BeamDiagnosticsResult(
+        # particle count & charge
+        n_total          = n_total,
+        n_alive          = n_alive,
+        n_lost           = n_lost_out,
+        Q_total_C        = Q_total,
+        Q_alive_C        = Q_alive,
+        Q_lost_C         = Q_lost_out,
+        # relativistic
+        gamma0           = d.gamma0,
+        beta0            = d.beta0,
+        mean_E_kin_eV    = mean_E,
+        sig_E_kin_eV     = sig_E,
+        sig_E_rel        = sig_E / mean_E if mean_E != 0.0 else 0.0,
+        # energy spread decomposition
+        sig_E_corr_eV    = d.cor_ekin,
+        sig_E_uncorr_eV  = sig_E_uncorr,
+        sig_E_slice_max_eV = sig_E_slice_max,
+        # transverse x
+        mean_x           = d.mean("x"),
+        sig_x            = d.std("x"),
+        mean_xp          = d.mean("xp"),
+        sig_xp           = d.std("xp"),
+        emit_x           = d.emit_x,
+        nemit_x          = d.nemit_x,
+        alpha_x          = d.alpha_x,
+        beta_x           = d.beta_x,
+        # transverse y
+        mean_y           = d.mean("y"),
+        sig_y            = d.std("y"),
+        mean_yp          = d.mean("yp"),
+        sig_yp           = d.std("yp"),
+        emit_y           = d.emit_y,
+        nemit_y          = d.nemit_y,
+        alpha_y          = d.alpha_y,
+        beta_y           = d.beta_y,
+        # longitudinal
+        mean_z           = d.mean("z"),
+        sig_z            = d.std("z"),
+        chirp            = d.chirp,
+        quadratic_chirp  = d.quadratic_chirp,
+        cubic_chirp      = d.cubic_chirp,
+        # current
+        I_peak_raw       = d.I_peak,
+        I_peak_smooth    = float(np.max(I_smo)),
+    )
 
 
 
