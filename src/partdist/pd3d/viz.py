@@ -673,6 +673,7 @@ def plot_current_profile_pd3d(
     show_smooth: bool = True,
     show_gaussian_fit: bool = True,
     show_parabola_fit: bool = True,
+    fix_peak: bool = False,
     fit_threshold: float = 0.05,
     fit_weights: str = "uniform",
 ) -> tuple:
@@ -700,6 +701,10 @@ def plot_current_profile_pd3d(
         Whether to draw the Gaussian fit.  Default ``True``.
     show_parabola_fit
         Whether to draw the inverted-parabola fit.  Default ``True``.
+    fix_peak
+        If ``True``, anchor each fit's amplitude and centre to the observed
+        peak of the smooth profile (only the width is fitted).  Default
+        ``False``, i.e. all three parameters are fitted freely.
     fit_threshold
         Bins below ``fit_threshold · I_peak`` are excluded from the fit.
         Default 0.05.
@@ -737,6 +742,7 @@ def plot_current_profile_pd3d(
         if not show:
             continue
         res = fit_current_profile(z_smo, I_smo, pname,
+                                  fix_peak=fix_peak,
                                   fit_threshold=fit_threshold,
                                   fit_weights=fit_weights)
         fit_results[pname] = res
