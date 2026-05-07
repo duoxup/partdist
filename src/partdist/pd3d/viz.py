@@ -2,27 +2,74 @@ from __future__ import annotations
 
 from typing import Any, Optional, Sequence, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
-import xtils
+from paramstudy.scale import autoscale_unit
+from paramstudy.unit import SimpleUnit, UnitLike, parse_unit
 
 from .core import ParticleDistribution
 
 
-def _apply_prefix_to_unit(unit: str, prefix: str) -> str:
-    """
-    Apply an SI prefix to a unit string.
+def _ensure_fig_ax(fig, ax):
+    """Normalize ``(fig, ax)`` so both are non-None matplotlib objects."""
+    if ax is not None:
+        return (ax.figure if fig is None else fig), ax
+    if fig is None:
+        fig, ax = plt.subplots()
+    else:
+        ax = fig.add_subplot(111)
+    return fig, ax
 
-    Examples
-    --------
-    'm'    + 'm' -> 'mm'
-    's'    + 'n' -> 'ns'
-    'eV/c' + 'k' -> 'keV/c'
-    ''     + any -> ''
+
+# Compound unit strings used in partdist that paramstudy.parse_unit cannot
+# parse on its own.  They are treated as opaque "atomic" symbols so that
+# ``SimpleUnit.with_prefix`` produces e.g. 'MeV/c', 'mm/s', 'kC*m/s'.
+_COMPOUND_UNIT_FALLBACKS: dict[str, SimpleUnit] = {
+    "eV/c":   SimpleUnit("eV/c"),
+    "m/s":    SimpleUnit("m/s"),
+    "kg*m/s": SimpleUnit("kg*m/s"),
+    "C*m/s":  SimpleUnit("C*m/s"),
+}
+
+
+def _to_unit_like(unit_str: str | None) -> UnitLike | None:
+    """Map a partdist unit string to a paramstudy ``UnitLike``.
+
+    Returns ``None`` when the string is empty or unparseable; callers should
+    skip autoscaling in that case.
     """
-    unit = unit or ""
-    if not unit:
-        return ""
-    return f"{prefix}{unit}"
+    if not unit_str:
+        return None
+    if unit_str in _COMPOUND_UNIT_FALLBACKS:
+        return _COMPOUND_UNIT_FALLBACKS[unit_str]
+    try:
+        return parse_unit(unit_str)
+    except ValueError:
+        return None
+
+
+def _autoscale(data, unit_str: str | None) -> tuple[float, str]:
+    """Resolve a display multiplier and rescaled unit string for ``data``.
+
+    Returns ``(multiplier, scaled_unit_str)``. When ``unit_str`` is empty or
+    cannot be mapped to a SimpleUnit, returns ``(1.0, unit_str or "")``.
+
+    paramstudy.scale picks a prefix from a representative magnitude. For beam
+    distributions (centred at zero), the maximum |value| matches user
+    expectations better than paramstudy's default median-of-positives.
+    """
+    u = _to_unit_like(unit_str)
+    if u is None:
+        return 1.0, (unit_str or "")
+    arr = np.asarray(data, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return 1.0, u.render()
+    magnitude = float(np.max(np.abs(finite)))
+    if magnitude == 0.0:
+        return 1.0, u.render()
+    sc = autoscale_unit(np.array([magnitude]), u)
+    return float(sc.multiplier), sc.render_unit()
 
 
 def _label_from_key(
@@ -41,26 +88,6 @@ def _label_from_key(
     if unit:
         return f"{name} [{unit}]"
     return f"{name}"
-
-
-def _autoscale_data_and_unit(
-    data: np.ndarray,
-    unit: str,
-) -> tuple[np.ndarray, str]:
-    """
-    Autoscale data using xtils.get_autoscale and update the unit string.
-
-    Returns
-    -------
-    scaled_data, scaled_unit
-    """
-    if (unit is not None) and unit != '':
-        scale, prefix = xtils.get_autoscale(data)
-    else:
-        scale, prefix = 1, ''
-    scaled_data = np.asarray(data, dtype=float) * scale
-    scaled_unit = _apply_prefix_to_unit(unit, prefix)
-    return scaled_data, scaled_unit
 
 
 def _resolve_range(
@@ -121,7 +148,7 @@ def scatter_pd3d(
         Optional quantity key for color mapping.
     fig, ax
         Optional matplotlib figure and axes. They are normalized by
-        `xtils.ensure_fig_ax(fig, ax)`.
+        `_ensure_fig_ax(fig, ax)`.
     colorbar
         Whether to add a colorbar when `c` is not None.
         Default:
@@ -137,7 +164,7 @@ def scatter_pd3d(
     fig, ax, artist
         Matplotlib figure, axes, and scatter artist.
     """
-    fig, ax = xtils.ensure_fig_ax(fig, ax)
+    fig, ax = _ensure_fig_ax(fig, ax)
     fig.set_layout_engine('constrained')
 
     xq = dist.get_quantity(x)
@@ -146,8 +173,10 @@ def scatter_pd3d(
     xdata_raw = np.asarray(xq.data, dtype=float)
     ydata_raw = np.asarray(yq.data, dtype=float)
 
-    xdata, xunit_scaled = _autoscale_data_and_unit(xdata_raw, xq.unit)
-    ydata, yunit_scaled = _autoscale_data_and_unit(ydata_raw, yq.unit)
+    xscale, xunit_scaled = _autoscale(xdata_raw, xq.unit)
+    yscale, yunit_scaled = _autoscale(ydata_raw, yq.unit)
+    xdata = xdata_raw * xscale
+    ydata = ydata_raw * yscale
 
     if c is None:
         artist = ax.scatter(xdata, ydata, **scatter_kwargs)
@@ -214,7 +243,7 @@ def hist2d_pd3d(
         - color_threshold=0.01 means bins below 1% of the maximum bin value are hidden.
     fig, ax
         Optional matplotlib figure and axes. They are normalized by
-        `xtils.ensure_fig_ax(fig, ax)`.
+        `_ensure_fig_ax(fig, ax)`.
     colorbar
         Whether to add a colorbar.
     xlabel, ylabel, clabel
@@ -228,7 +257,7 @@ def hist2d_pd3d(
         Matplotlib figure, axes, QuadMesh artist, histogram array,
         and bin edges.
     """
-    fig, ax = xtils.ensure_fig_ax(fig, ax)
+    fig, ax = _ensure_fig_ax(fig, ax)
     fig.set_layout_engine('constrained')
 
     xq = dist.get_quantity(x)
@@ -258,18 +287,8 @@ def hist2d_pd3d(
     )
 
     # Autoscale x/y bin edges for plotting.
-    _, xunit_scaled = _autoscale_data_and_unit(xdata_raw, xq.unit)
-    _, yunit_scaled = _autoscale_data_and_unit(ydata_raw, yq.unit)
-    
-    if (xq.unit is not None) and (xq.unit != ''):
-        xscale, _ = xtils.get_autoscale(xdata_raw)
-    else:
-        xscale = 1
-        
-    if (yq.unit is not None) and (yq.unit != ''):
-        yscale, _ = xtils.get_autoscale(ydata_raw)
-    else:
-        yscale = 1
+    xscale, xunit_scaled = _autoscale(xdata_raw, xq.unit)
+    yscale, yunit_scaled = _autoscale(ydata_raw, yq.unit)
 
     xedges = np.asarray(xedges_raw, dtype=float) * xscale
     yedges = np.asarray(yedges_raw, dtype=float) * yscale
@@ -423,15 +442,8 @@ def _add_projection_curves_pd3d(
     xcenters_raw = 0.5 * (xedges_raw[:-1] + xedges_raw[1:])
     ycenters_raw = 0.5 * (yedges_raw[:-1] + yedges_raw[1:])
 
-    if (xq.unit is not None) and (xq.unit != ""):
-        xscale, _ = xtils.get_autoscale(xdata_raw)
-    else:
-        xscale = 1.0
-
-    if (yq.unit is not None) and (yq.unit != ""):
-        yscale, _ = xtils.get_autoscale(ydata_raw)
-    else:
-        yscale = 1.0
+    xscale, _ = _autoscale(xdata_raw, xq.unit)
+    yscale, _ = _autoscale(ydata_raw, yq.unit)
 
     xcenters = np.asarray(xcenters_raw, dtype=float) * xscale
     ycenters = np.asarray(ycenters_raw, dtype=float) * yscale
@@ -569,7 +581,7 @@ def plot_binned_profile(
     """
     from .analysis import compute_binned_profile
 
-    fig, ax = xtils.ensure_fig_ax(fig, ax)
+    fig, ax = _ensure_fig_ax(fig, ax)
     fig.set_layout_engine("constrained")
 
     profile = compute_binned_profile(
@@ -612,20 +624,17 @@ def plot_binned_profile(
         except KeyError:
             pass
 
-    x_data_scaled, x_unit_scaled = _autoscale_data_and_unit(x_data, x_unit)
-    y_data_scaled, y_unit_scaled = _autoscale_data_and_unit(y_data, y_unit)
+    x_mult, x_unit_scaled = _autoscale(x_data, x_unit)
+    y_mult, y_unit_scaled = _autoscale(y_data, y_unit)
+    x_data_scaled = np.asarray(x_data, dtype=float) * x_mult
+    y_data_scaled = np.asarray(y_data, dtype=float) * y_mult
 
     # --- plot ---
     line, = ax.plot(x_data_scaled, y_data_scaled, **plot_kwargs)
 
     # Optional ±σ band (only meaningful for the main statistic)
     if show_std_band and plot_stat == "stat":
-        y_std = profile.y_std_valid
-        if y_unit and len(y_data) > 0:
-            yscale, _ = xtils.get_autoscale(y_data)
-        else:
-            yscale = 1.0
-        y_std_scaled = y_std * yscale
+        y_std_scaled = np.asarray(profile.y_std_valid, dtype=float) * y_mult
         ax.fill_between(
             x_data_scaled,
             y_data_scaled - y_std_scaled,
@@ -719,7 +728,7 @@ def plot_current_profile_pd3d(
     """
     from .analysis import fit_current_profile
 
-    fig, ax = xtils.ensure_fig_ax(fig, ax)
+    fig, ax = _ensure_fig_ax(fig, ax)
 
     # ── raw and smooth profiles via dist properties ────────────────────
     z_raw, I_raw = dist.current_profile_z
