@@ -5,7 +5,7 @@ from typing import Optional, Sequence, Union, TYPE_CHECKING
 import numpy as np
 
 from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
-from xtils import relconv
+from partdist import kinematics as relconv
 
 if TYPE_CHECKING:
     from .core import ParticleDistribution
@@ -183,7 +183,7 @@ def _velocity_components_to_momentum_evc(
     """
     Convert velocity vector components [m/s] to momentum components [eV/c].
 
-    This helper uses xtils.relconv for the relativistic magnitude conversion,
+    This helper uses partdist.kinematics for the relativistic magnitude conversion,
     and reconstructs the vector components from the original direction.
 
     Parameters
@@ -241,7 +241,7 @@ def _momentum_evc_components_to_velocity(
     """
     Convert momentum vector components [eV/c] to velocity components [m/s].
 
-    This helper uses xtils.relconv for the relativistic magnitude conversion,
+    This helper uses partdist.kinematics for the relativistic magnitude conversion,
     and reconstructs the vector components from the original direction.
 
     Parameters

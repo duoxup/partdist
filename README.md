@@ -10,9 +10,6 @@ PartDist is a Python library for storing, manipulating, and analyzing 3D particl
 pip install git+https://github.com/PigDuo/partdist.git
 ```
 
-> **Note:** This package also requires `xtils` (a private dependency not on PyPI).
-> Install it separately before using `partdist`.
-
 ### Minimal Example
 
 ```python
@@ -74,7 +71,7 @@ The following **derived quantities** are computed on-demand:
 - Time: seconds [s]
 - Charge: Coulombs [C]
 
-The library uses `xtils.relconv` for relativistic conversions and ensures consistent unit handling throughout all operations.
+The library uses `partdist.kinematics` for relativistic conversions and ensures consistent unit handling throughout all operations.
 
 ## Detailed Examples
 
