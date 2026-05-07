@@ -4,7 +4,8 @@ import pandas as pd
 from typing import Dict, Mapping, Sequence, Union
 
 import numpy as np
-from xtils import g_c, g_m0, g_e0, relconv
+from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
+from xtils import relconv
 
 from ..particle_array_quantity import (
     ParticleArrayQuantity,

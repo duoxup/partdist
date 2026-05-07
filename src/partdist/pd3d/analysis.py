@@ -6,7 +6,7 @@ from typing import Callable, Dict, Literal, Optional, Sequence, Union, TYPE_CHEC
 import numpy as np
 from scipy.interpolate import UnivariateSpline
 
-from xtils import g_m0, g_c
+from scipy.constants import c as g_c, m_e as g_m0
 from .utils import _extract_data, _get_weight_array, _normalize_mask
 
 if TYPE_CHECKING:

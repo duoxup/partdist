@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional, Union
 
 import h5py
 import numpy as np
-from xtils import g_c, g_m0, g_e0
+from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
 
 from ..particle_array_quantity import ParticleArrayQuantity
 from .core import ParticleDistribution

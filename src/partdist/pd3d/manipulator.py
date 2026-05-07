@@ -5,7 +5,7 @@ from typing import Callable, Literal, Optional, Sequence, Union
 import numpy as np
 
 from scipy.optimize import brentq
-from xtils import g_c, g_e0, g_m0
+from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
 from xtils import relconv
 
 from..particle_array_quantity import ParticleArrayQuantity

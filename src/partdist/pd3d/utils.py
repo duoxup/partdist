@@ -4,7 +4,8 @@ from typing import Optional, Sequence, Union, TYPE_CHECKING
 
 import numpy as np
 
-from xtils import relconv, g_c, g_e0, g_m0
+from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
+from xtils import relconv
 
 if TYPE_CHECKING:
     from .core import ParticleDistribution
