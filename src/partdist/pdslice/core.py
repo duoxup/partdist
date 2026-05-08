@@ -12,6 +12,7 @@ from ..particle_array_quantity import (
     QuantityCategory,
     QuantityDTypeKind,
 )
+from ..pd3d.analysis import compute_twiss_plane
 
 ArrayLike = Union[float, Sequence[float], np.ndarray]
 
@@ -810,6 +811,45 @@ class SliceDistribution:
     @property
     def nemit_y(self) -> float:
         return float(self.beta0 * self.gamma0 * self.emit_y)
+
+    @property
+    def alpha_x(self) -> float:
+        """Twiss alpha in x. Raises if x is the fixed axis."""
+        return compute_twiss_plane(self, plane="x", weight="lam_abs").alpha
+
+    @property
+    def beta_x(self) -> float:
+        """Twiss beta in x [m]. Raises if x is the fixed axis."""
+        return compute_twiss_plane(self, plane="x", weight="lam_abs").beta
+
+    @property
+    def gamma_x(self) -> float:
+        """Twiss gamma in x [1/m]. Raises if x is the fixed axis."""
+        return compute_twiss_plane(self, plane="x", weight="lam_abs").gamma_twiss
+
+    @property
+    def alpha_y(self) -> float:
+        """Twiss alpha in y. Raises if y is the fixed axis."""
+        return compute_twiss_plane(self, plane="y", weight="lam_abs").alpha
+
+    @property
+    def beta_y(self) -> float:
+        """Twiss beta in y [m]. Raises if y is the fixed axis."""
+        return compute_twiss_plane(self, plane="y", weight="lam_abs").beta
+
+    @property
+    def gamma_y(self) -> float:
+        """Twiss gamma in y [1/m]. Raises if y is the fixed axis."""
+        return compute_twiss_plane(self, plane="y", weight="lam_abs").gamma_twiss
+
+    @property
+    def twiss(self) -> Dict[str, float]:
+        return dict(
+            alpha_x=self.alpha_x,
+            beta_x=self.beta_x,
+            alpha_y=self.alpha_y,
+            beta_y=self.beta_y,
+        )
 
     # ------------------------------------------------------------------ #
     # Convenience properties                                               #
