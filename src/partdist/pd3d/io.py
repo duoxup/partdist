@@ -574,7 +574,6 @@ def write_astra_distribution(
 def read_cst_pid_distribution(
     filepath: str | Path,
     *,
-    time_window: float | None = None,
     dtype: type = float,
 ) -> ParticleDistribution:
     """
@@ -587,7 +586,13 @@ def read_cst_pid_distribution(
     where ``mom_i`` is the normalised momentum :math:`\\beta_i \\gamma_i`
     (dimensionless), ``mass`` [kg] and ``charge`` [C, signed] are the
     per-particle physical species values, and ``current`` [A] is the current
-    contribution attributed to each macroparticle.  Time is not stored.
+    contribution attributed to each macroparticle in the steady-state beam.
+
+    A .pid file describes a **DC (steady-state) particle distribution**, so
+    the per-macroparticle charge ``Q`` of a discrete-bunch picture does not
+    apply.  ``Q`` is therefore set to zero on read and the natural weight for
+    moment statistics is the per-macroparticle current ``cst_current``: pass
+    ``weight='cst_current'`` to diagnostics that accept a weight argument.
 
     Conversion
     ----------
@@ -595,20 +600,15 @@ def read_cst_pid_distribution(
     - px, py, pz: ``mom * mass * c**2 / |charge|`` [eV/c], computed per row
       so heterogeneous species work.
     - t         : zeros (the format carries no time information).
-    - Q         : ``current * time_window`` [C] when ``time_window`` is
-      supplied; otherwise zeros, with a warning.  The raw ``current``,
-      ``mass`` and ``charge`` columns are preserved verbatim as extras
-      so no information is lost.
+    - Q         : zeros (DC beam, see note above).
+    - extras    : raw ``current`` [A], ``mass`` [kg] and ``charge`` [C] are
+      preserved as ``cst_current`` / ``cst_mass`` / ``cst_charge`` so no
+      information is lost.
 
     Parameters
     ----------
     filepath
         Path to the .pid file.
-    time_window
-        Emission/integration window [s] used to convert the per-macroparticle
-        current to a macroparticle charge ``Q = current * time_window``.  When
-        omitted, ``Q`` is zero and a warning is emitted; recover Q later via
-        ``dist.update_quantity("Q", current * dt)``.
     dtype
         Data type passed to ``np.loadtxt``.
     """
@@ -633,18 +633,7 @@ def read_cst_pid_distribution(
     pz = p_norm_z * rest_energy_eV
 
     t = np.zeros(n, dtype=float)
-
-    if time_window is not None:
-        Q = current.astype(float) * float(time_window)
-    else:
-        warnings.warn(
-            "read_cst_pid_distribution: no `time_window` provided, so "
-            "macroparticle charge Q is set to zero. The raw current is "
-            "preserved as extras['cst_current'].",
-            UserWarning,
-            stacklevel=2,
-        )
-        Q = np.zeros(n, dtype=float)
+    Q = np.zeros(n, dtype=float)
 
     extras = {
         "cst_current": ParticleArrayQuantity(
