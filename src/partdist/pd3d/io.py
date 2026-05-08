@@ -17,8 +17,6 @@ ASTRA_N_COLS = 10
 # ASTRA_FMT = '%14.6E%14.6E%14.6E%14.6E%14.6E%14.6E%14.6E%14.6E%4d%4d'
 ASTRA_FMT = '%12.4E'*8 + '%4d'*2  #exact original Astra format
 
-CST_PID_N_COLS = 9  # pos_x pos_y pos_z mom_x mom_y mom_z mass charge current
-
 @dataclass(frozen=True)
 class AstraReferenceParticle:
     """
@@ -103,21 +101,6 @@ def _loadtxt_2d(filepath: str | Path, dtype: type = float) -> np.ndarray:
         )
     if arr.shape[0] < 1:
         raise ValueError("ASTRA file must contain at least one row.")
-    return arr
-
-
-def _loadtxt_pid(filepath: str | Path, dtype: type = float) -> np.ndarray:
-    """Load a CST .pid 9-column ASCII table with '%' line comments."""
-    arr = np.loadtxt(Path(filepath), dtype=dtype, ndmin=2, comments="%")
-    if arr.ndim != 2:
-        raise ValueError(f"Expected a 2D array, got shape {arr.shape}.")
-    if arr.shape[1] != CST_PID_N_COLS:
-        raise ValueError(
-            f"CST .pid file must have exactly {CST_PID_N_COLS} columns, "
-            f"got {arr.shape[1]}."
-        )
-    if arr.shape[0] < 1:
-        raise ValueError("CST .pid file must contain at least one row.")
     return arr
 
 
@@ -568,114 +551,6 @@ def write_astra_distribution(
         raw,
         fmt=fmt,
         delimiter=delimiter,
-    )
-
-
-def read_cst_pid_distribution(
-    filepath: str | Path,
-    *,
-    dtype: type = float,
-) -> ParticleDistribution:
-    """
-    Read a CST Particle Studio ``.pid`` file into a ParticleDistribution.
-
-    File format (SI units, ``%`` line comments)
-    -------------------------------------------
-    Columns: ``pos_x  pos_y  pos_z  mom_x  mom_y  mom_z  mass  charge  current``
-
-    where ``mom_i`` is the normalised momentum :math:`\\beta_i \\gamma_i`
-    (dimensionless), ``mass`` [kg] and ``charge`` [C, signed] are the
-    per-particle physical species values, and ``current`` [A] is the current
-    contribution attributed to each macroparticle in the steady-state beam.
-
-    A .pid file describes a **DC (steady-state) particle distribution**, so
-    the per-macroparticle charge ``Q`` of a discrete-bunch picture does not
-    apply.  ``Q`` is therefore set to zero on read and the natural weight for
-    moment statistics is the per-macroparticle current ``cst_current``: pass
-    ``weight='cst_current'`` to diagnostics that accept a weight argument.
-
-    Conversion
-    ----------
-    - x, y, z   : copied verbatim [m].
-    - px, py, pz: ``mom * mass * c**2 / |charge|`` [eV/c], computed per row
-      so heterogeneous species work.
-    - t         : zeros (the format carries no time information).
-    - Q         : zeros (DC beam, see note above).
-    - extras    : raw ``current`` [A], ``mass`` [kg] and ``charge`` [C] are
-      preserved as ``cst_current`` / ``cst_mass`` / ``cst_charge`` so no
-      information is lost.
-
-    Parameters
-    ----------
-    filepath
-        Path to the .pid file.
-    dtype
-        Data type passed to ``np.loadtxt``.
-    """
-    raw = _loadtxt_pid(filepath, dtype=dtype)
-    n = raw.shape[0]
-
-    x = raw[:, 0]
-    y = raw[:, 1]
-    z = raw[:, 2]
-
-    p_norm_x = raw[:, 3]
-    p_norm_y = raw[:, 4]
-    p_norm_z = raw[:, 5]
-
-    mass = raw[:, 6]
-    charge = raw[:, 7]
-    current = raw[:, 8]
-
-    rest_energy_eV = mass * g_c**2 / np.abs(charge)  # m c^2 / |q|, per row
-    px = p_norm_x * rest_energy_eV
-    py = p_norm_y * rest_energy_eV
-    pz = p_norm_z * rest_energy_eV
-
-    t = np.zeros(n, dtype=float)
-    Q = np.zeros(n, dtype=float)
-
-    extras = {
-        "cst_current": ParticleArrayQuantity(
-            name="cst_current",
-            data=current.astype(float),
-            unit="A",
-            dtype_kind="float",
-            short_name="I_cst",
-            long_name="CST .pid macroparticle current",
-            latex_name=r"$I_\mathrm{cst}$",
-            category="current",
-            is_derived=False,
-        ),
-        "cst_mass": ParticleArrayQuantity(
-            name="cst_mass",
-            data=mass.astype(float),
-            unit="kg",
-            dtype_kind="float",
-            short_name="m_cst",
-            long_name="CST .pid per-particle rest mass",
-            latex_name=r"$m_\mathrm{cst}$",
-            category="other",
-            is_derived=False,
-        ),
-        "cst_charge": ParticleArrayQuantity(
-            name="cst_charge",
-            data=charge.astype(float),
-            unit="C",
-            dtype_kind="float",
-            short_name="q_cst",
-            long_name="CST .pid per-particle physical charge",
-            latex_name=r"$q_\mathrm{cst}$",
-            category="other",
-            is_derived=False,
-        ),
-    }
-
-    return ParticleDistribution(
-        x=x, y=y, z=z,
-        px=px, py=py, pz=pz,
-        t=t, Q=Q,
-        extras=extras,
     )
 
 

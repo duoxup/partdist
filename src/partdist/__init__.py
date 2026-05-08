@@ -14,10 +14,10 @@ from .pdslice.core import SliceDistribution
 from .pd3d.io import (
     read_astra_distribution,
     write_astra_distribution,
-    read_cst_pid_distribution,
     from_ocelot_particle_array,
     to_ocelot_particle_array,
 )
+from .pdslice.io import read_cst_pid_distribution
 
 from .pd3d.manipulator import (
     replicate_longitudinally,
