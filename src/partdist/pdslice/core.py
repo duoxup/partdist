@@ -1,3 +1,18 @@
+"""
+SliceDistribution — particle distribution on a single transverse slice.
+
+Stores particles whose ``z`` coordinate is fixed to a scalar slice
+position ``z0``. The transverse columns ``(x, y, px, py, pz, t)`` and the
+linear charge density ``lam`` [C/m] are per-particle arrays. Derived
+quantities (gamma, beta, vx, vy, vz, xp, current, …) are computed lazily
+from the base columns and cached where the cost matters.
+
+Designed as a sibling of :class:`partdist.ParticleDistribution3D`; same
+derived-quantity machinery, same Twiss diagnostics via
+:func:`partdist.pd3d.analysis.compute_twiss_plane`. CST Particle Studio
+``.pid`` emission files are the canonical input format
+(:func:`partdist.read_cst_pid_distribution`).
+"""
 from __future__ import annotations
 
 import pandas as pd
