@@ -375,7 +375,9 @@ def _get_pxyz_data(
     """
     Return px, py, pz as 1D arrays.
 
-    These are derived quantities, expected to be exposed by ParticleDistribution.
+    These are base quantities stored directly on ParticleDistribution3D
+    (see _BASE_SPECS in core.py). The helper exists only to enforce
+    1D float dtype at call sites.
     """
     return (
         np.asarray(dist.px, dtype=float).reshape(-1),
