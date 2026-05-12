@@ -1,3 +1,10 @@
+"""
+ParticleDistribution3D — 3D particle distribution container.
+
+Stores particles as (x, y, z, px, py, pz, t, Q) and exposes derived
+quantities (gamma, beta, vx, xp, delta, kinetic_energy_eV, current_flux_*)
+computed lazily from the base columns.
+"""
 from __future__ import annotations
 
 import pandas as pd

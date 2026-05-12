@@ -1,3 +1,10 @@
+"""
+File I/O for ParticleDistribution3D.
+
+ASTRA .ini files (read/write), Genesis HDF5 .h5 (read/write), and
+Ocelot ParticleArray bridging. The pure-physics p<->v converters now
+live in pd3d.utils.
+"""
 from __future__ import annotations
 
 import warnings

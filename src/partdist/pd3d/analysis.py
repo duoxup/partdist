@@ -1,3 +1,10 @@
+"""
+Diagnostics for ParticleDistribution3D and SliceDistribution.
+
+Twiss/emittance, binned profiles and trend fits, longitudinal linearity,
+beam diagnostics, current-profile fits. All results returned as frozen
+dataclasses; see PhaseSpacePlaneResult, BeamDiagnosticsResult, etc.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field

@@ -1,3 +1,10 @@
+"""
+Matplotlib-based visualization for ParticleDistribution3D.
+
+Phase-space plots, longitudinal/transverse projections, current and
+energy profiles. Uses paramstudy.autoscale_unit for SI-prefix axis
+labels.
+"""
 from __future__ import annotations
 
 from typing import Any, Optional, Sequence, Union

@@ -1,3 +1,10 @@
+"""
+Transformations on ParticleDistribution3D.
+
+Centering, masking, slicing, energy/chirp scaling, twiss-matching, and
+core-region extraction. Most functions take and return a distribution;
+a handful are re-exported from the top-level partdist package.
+"""
 from __future__ import annotations
 
 from typing import Callable, Literal, Optional, Sequence, Union
