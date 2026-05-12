@@ -90,7 +90,7 @@ class ParticleDistribution3D:
         "current_flux_x_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_x_like|","long_name": "absolute x current-like weight","latex_name": r"$|Qv_x|$",    "category": "current",  "is_derived": True},
         "current_flux_y_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_y_like|","long_name": "absolute y current-like weight","latex_name": r"$|Qv_y|$",    "category": "current",  "is_derived": True},
         "current_flux_z_abs": {"unit": "C*m/s",  "dtype_kind": "float", "short_name": "|I_z_like|","long_name": "absolute z current-like weight","latex_name": r"$|Qv_z|$",    "category": "current",  "is_derived": True},
-        "tau":                {"unit": "m",      "dtype_kind": "float", "short_name": "tau",       "long_name": "relative path length",          "latex_name": r"$\tau$",      "category": "position", "is_derived": True},
+        "tau":                {"unit": "m",      "dtype_kind": "float", "short_name": "tau",       "long_name": "longitudinal position offset",  "latex_name": r"$\tau$",      "category": "position", "is_derived": True},
     }
 
     def __init__(
