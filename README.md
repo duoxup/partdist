@@ -131,7 +131,7 @@ pa_back = to_ocelot_particle_array(dist)
 ### Matching Twiss Parameters
 
 ```python
-from partdist import match_twiss_xy
+from partdist.pd3d.manipulator import match_twiss_xy
 from partdist.pd3d.analysis import compute_twiss_plane
 
 dist_matched = match_twiss_xy(
@@ -157,7 +157,11 @@ The package standardises on the geometric divergence `x' = px/pz`, `y' = py/pz` 
 ### Longitudinal Manipulation
 
 ```python
-from partdist import replicate_longitudinally, multiply_longitudinal_profile, set_linear_chirp
+from partdist.pd3d.manipulator import (
+    replicate_longitudinally,
+    multiply_longitudinal_profile,
+    set_linear_chirp,
+)
 
 dist_replicated = replicate_longitudinally(
     dist,
@@ -234,27 +238,27 @@ Composite analysis results are frozen dataclasses (`PhaseSpacePlaneResult`, `Bin
 - `ParticleArrayQuantity` — individual array column with unit/name/category metadata
 - `ParticleDistribution` — backward-compatibility alias of `ParticleDistribution3D`
 
-### File I/O
+### File I/O (top-level re-exports)
 
-Top-level re-exports:
 - `read_astra_distribution()`, `write_astra_distribution()` — ASTRA `.ini` / `.dist`
+- `read_genesis_distribution()`, `write_genesis_distribution()` — Genesis 4 HDF5
 - `read_cst_pid_distribution()` — CST Particle Studio `.pid` emission planes → `SliceDistribution`
 - `from_ocelot_particle_array()`, `to_ocelot_particle_array()` — OCELOT `ParticleArray` bridging
 
-In `partdist.pd3d.io`:
-- `read_genesis_distribution()`, `write_genesis_distribution()` — Genesis 4 HDF5
+Low-level relativistic helpers live in `partdist.pd3d.utils`:
+- `momentum_evc_to_velocity()`, `velocity_to_momentum_evc()` — `(p_eVc) ↔ (v_si)` converters
 
-In `partdist.pd3d.utils`:
-- `momentum_evc_to_velocity()`, `velocity_to_momentum_evc()` — relativistic `(p_eVc) ↔ (v_si)` converters
+### Manipulation (in `partdist.pd3d.manipulator`)
 
-### Manipulation (top-level)
+These functions operate on `ParticleDistribution3D` specifically; import them from `partdist.pd3d.manipulator` rather than the top-level package.
 
+Headline routines:
 - `replicate_longitudinally()` — create longitudinal copies of a distribution
 - `multiply_longitudinal_profile()` — re-weight by a user-supplied profile function
 - `set_linear_chirp()` — impose a `δ(z)` linear energy chirp
 - `match_twiss_xy()` — match transverse Twiss parameters in both planes
 
-Further routines (centering, masking, slicing, core-region extraction, scale_emittance, scale_energy, …) live under `partdist.pd3d.manipulator` — import them from there directly.
+Plus a larger set of helpers (centering, masking, slicing, core-region extraction, `scale_emittance`, `scale_energy`, …) — see the module for the full surface.
 
 ### Analysis (in `partdist.pd3d.analysis`)
 
