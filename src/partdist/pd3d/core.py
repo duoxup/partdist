@@ -14,16 +14,11 @@ from ..particle_array_quantity import (
 )
 
 from .analysis import compute_twiss_plane, current_profile_z
-from .._array_helpers import as_1d_array as _as_1d_array_kw
+from .._array_helpers import as_1d_array as _as_1d_array
 from .._array_helpers import as_1d_float_array as _as_1d_float_array
 
 
 ArrayLike = Union[float, Sequence[float], np.ndarray]
-
-
-def _as_1d_array(a: ArrayLike, name: str) -> np.ndarray:
-    """Thin wrapper: forward to canonical helper with positional ``name``."""
-    return _as_1d_array_kw(a, name=name)
 
 
 class ParticleDistribution3D:
@@ -321,7 +316,7 @@ class ParticleDistribution3D:
             if q.name != key:
                 q.name = key
         else:
-            arr = _as_1d_array(value, key)
+            arr = _as_1d_array(value, name=key)
             q = ParticleArrayQuantity(
                 name=key,
                 data=arr,
@@ -396,7 +391,7 @@ class ParticleDistribution3D:
             if new_q.name != key:
                 new_q.name = key
         else:
-            arr = _as_1d_array(value, key)
+            arr = _as_1d_array(value, name=key)
             new_q = ParticleArrayQuantity(
                 name=key,
                 data=arr,
