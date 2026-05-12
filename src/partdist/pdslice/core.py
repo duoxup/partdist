@@ -626,8 +626,8 @@ class SliceDistribution:
         return self.beta * g_c
 
     def _calc_velocities(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from ..pd3d.utils import _momentum_evc_components_to_velocity
-        return _momentum_evc_components_to_velocity(
+        from ..pd3d.utils import momentum_evc_to_velocity
+        return momentum_evc_to_velocity(
             self._quantities["px"].data,
             self._quantities["py"].data,
             self._quantities["pz"].data,

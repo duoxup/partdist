@@ -171,7 +171,7 @@ def _get_weight_array(
     return w
 
 
-def _velocity_components_to_momentum_evc(
+def velocity_to_momentum_evc(
     vx: ArrayLike,
     vy: ArrayLike,
     vz: ArrayLike,
@@ -229,7 +229,7 @@ def _velocity_components_to_momentum_evc(
     return px, py, pz
 
 
-def _momentum_evc_components_to_velocity(
+def momentum_evc_to_velocity(
     px: ArrayLike,
     py: ArrayLike,
     pz: ArrayLike,

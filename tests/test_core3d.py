@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from partdist.pd3d.core import ParticleDistribution
-from partdist.pd3d.io import velocity_to_momentum_evc
+from partdist.pd3d.utils import velocity_to_momentum_evc
 
 x = np.array([0.0, 1e-6, -1e-6])
 y = np.array([0.0, 2e-6, -2e-6])
