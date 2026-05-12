@@ -16,15 +16,6 @@ from ..pd3d.analysis import compute_twiss_plane
 
 ArrayLike = Union[float, Sequence[float], np.ndarray]
 
-_VALID_AXES: frozenset[str] = frozenset(("x", "y", "z"))
-
-# Maps fixed axis → the two varying position axes (in canonical order)
-_VARYING_AXES: dict[str, tuple[str, str]] = {
-    "x": ("y", "z"),
-    "y": ("x", "z"),
-    "z": ("x", "y"),
-}
-
 
 def _as_1d_float_array(a: ArrayLike, name: str) -> np.ndarray:
     arr = np.asarray(a, dtype=float).reshape(-1)
@@ -49,26 +40,29 @@ def _make_paq(key: str, data: np.ndarray, spec: dict) -> ParticleArrayQuantity:
 
 class SliceDistribution:
     """
-    2.5D particle distribution: particles share a common fixed position along
-    one spatial axis, with full 3-component momenta.
+    2.5D particle distribution on a transverse slice perpendicular to the
+    z-axis.  All particles share a common ``z`` position; ``x`` and ``y``
+    vary.  Full 3-component momenta (px, py, pz) are stored per-particle
+    [eV/c].
 
-    All three momentum components (px, py, pz) are stored per-particle [eV/c].
+    z is the longitudinal / propagation direction by convention — this
+    matches accelerator-physics usage and is consistent with
+    :class:`partdist.ParticleDistribution3D`.  The class is intentionally
+    z-only; if you need a slice along x or y, rotate your data first.
+
     The charge quantity ``lam`` (λ) is the *linear* charge density [C/m],
-    i.e. charge per unit length along the fixed axis.
+    i.e. charge per unit length along z.
 
-    Accessing the fixed-axis position property (e.g. ``.z`` when
-    ``fixed_axis='z'``) returns a Python ``float`` — not an ndarray — to
-    make the distinction from a 3D distribution immediately visible and to
-    prevent accidental mixing of the two types.
+    Accessing ``.z`` returns a Python ``float`` (the slice's z₀) — not an
+    ndarray — to make the distinction from a 3D distribution immediately
+    visible and to prevent accidental mixing of the two types.
 
     Parameters
     ----------
-    fixed_axis : {'x', 'y', 'z'}
-        The spatial axis shared by all particles.
-    fixed_value : float
-        The common coordinate value along the fixed axis [m].
-    x, y, z : ArrayLike, optional
-        Position arrays for the two *varying* axes.  Omit the fixed axis.
+    z : float
+        The common z-coordinate of the slice [m].
+    x, y : ArrayLike
+        Per-particle transverse positions [m].
     px, py, pz : ArrayLike
         Momentum components [eV/c].
     t : ArrayLike
@@ -122,11 +116,9 @@ class SliceDistribution:
     def __init__(
         self,
         *,
-        fixed_axis: str,
-        fixed_value: float,
-        x: ArrayLike | None = None,
-        y: ArrayLike | None = None,
-        z: ArrayLike | None = None,
+        z: float,
+        x: ArrayLike,
+        y: ArrayLike,
         px: ArrayLike,
         py: ArrayLike,
         pz: ArrayLike,
@@ -134,35 +126,17 @@ class SliceDistribution:
         lam: ArrayLike,
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
     ) -> None:
-        if fixed_axis not in _VALID_AXES:
-            raise ValueError(f"fixed_axis must be 'x', 'y', or 'z'; got {fixed_axis!r}.")
-
-        self._fixed_axis: str = fixed_axis
-        self._fixed_value: float = float(fixed_value)
+        self._z0: float = float(z)
         self._quantities: Dict[str, ParticleArrayQuantity] = {}
 
-        varying = _VARYING_AXES[fixed_axis]
-        pos_kwargs: dict[str, ArrayLike | None] = {"x": x, "y": y, "z": z}
-
-        if pos_kwargs[fixed_axis] is not None:
-            raise ValueError(
-                f"fixed_axis='{fixed_axis}' is the shared coordinate — do not pass "
-                f"'{fixed_axis}' as an array.  Supply its scalar via fixed_value."
-            )
-        for axis in varying:
-            if pos_kwargs[axis] is None:
-                raise ValueError(f"Varying position '{axis}' must be provided.")
-
-        # Store the two varying position arrays
-        for axis in varying:
-            arr = _as_1d_float_array(pos_kwargs[axis], axis)
+        for axis, arr_in in (("x", x), ("y", y)):
+            arr = _as_1d_float_array(arr_in, axis)
             self._quantities[axis] = _make_paq(axis, arr, self._POSITION_SPECS[axis])
 
-        n = len(self._quantities[varying[0]].data)
-        if len(self._quantities[varying[1]].data) != n:
-            raise ValueError("Both varying position arrays must have the same length.")
+        n = len(self._quantities["x"].data)
+        if len(self._quantities["y"].data) != n:
+            raise ValueError("x and y must have the same length.")
 
-        # Store momentum, time, linear charge density
         non_pos = {
             "px": _as_1d_float_array(px, "px"),
             "py": _as_1d_float_array(py, "py"),
@@ -183,20 +157,15 @@ class SliceDistribution:
         return self.n
 
     def __repr__(self) -> str:
-        return (
-            f"SliceDistribution(fixed_axis={self._fixed_axis!r}, "
-            f"fixed_value={self._fixed_value:.6g} m, n={self.n})"
-        )
+        return f"SliceDistribution(z={self._z0:.6g} m, n={self.n})"
 
     @classmethod
     def from_arrays(
         cls,
         *,
-        fixed_axis: str,
-        fixed_value: float,
-        x: ArrayLike | None = None,
-        y: ArrayLike | None = None,
-        z: ArrayLike | None = None,
+        z: float,
+        x: ArrayLike,
+        y: ArrayLike,
         px: ArrayLike,
         py: ArrayLike,
         pz: ArrayLike,
@@ -204,40 +173,21 @@ class SliceDistribution:
         lam: ArrayLike | None = None,
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
     ) -> "SliceDistribution":
-        if fixed_axis not in _VALID_AXES:
-            raise ValueError(f"fixed_axis must be 'x', 'y', or 'z'; got {fixed_axis!r}.")
         if lam is None:
-            varying = _VARYING_AXES[fixed_axis]
-            pos_kwargs = {"x": x, "y": y, "z": z}
-            first = np.asarray(pos_kwargs[varying[0]], dtype=float).reshape(-1)
-            lam = np.ones(len(first), dtype=float)
+            lam = np.ones(len(np.asarray(x, dtype=float).reshape(-1)), dtype=float)
         return cls(
-            fixed_axis=fixed_axis, fixed_value=fixed_value,
-            x=x, y=y, z=z, px=px, py=py, pz=pz, t=t, lam=lam,
-            extras=extras,
+            z=z, x=x, y=y, px=px, py=py, pz=pz, t=t, lam=lam, extras=extras,
         )
 
     @classmethod
     def from_dict(cls, data: Mapping) -> "SliceDistribution":
-        if "fixed_axis" not in data or "fixed_value" not in data:
-            raise KeyError("Mapping must contain 'fixed_axis' and 'fixed_value'.")
-        fixed_axis = data["fixed_axis"]
-        fixed_value = data["fixed_value"]
-        varying = _VARYING_AXES.get(fixed_axis)
-        if varying is None:
-            raise ValueError(f"fixed_axis must be 'x', 'y', or 'z'; got {fixed_axis!r}.")
-        required = set(varying) | {"px", "py", "pz", "t", "lam"}
+        required = {"z", "x", "y", "px", "py", "pz", "t", "lam"}
         missing = [k for k in required if k not in data]
         if missing:
             raise KeyError(f"Missing required keys: {missing}")
-        skip = {"fixed_axis", "fixed_value"} | required
-        extras = {k: v for k, v in data.items() if k not in skip}
-        pos_kwargs: dict[str, ArrayLike | None] = {"x": None, "y": None, "z": None}
-        for axis in varying:
-            pos_kwargs[axis] = data[axis]
+        extras = {k: v for k, v in data.items() if k not in required}
         return cls(
-            fixed_axis=fixed_axis, fixed_value=fixed_value,
-            **pos_kwargs,
+            z=data["z"], x=data["x"], y=data["y"],
             px=data["px"], py=data["py"], pz=data["pz"],
             t=data["t"], lam=data["lam"],
             extras=extras or None,
@@ -248,23 +198,8 @@ class SliceDistribution:
     # ------------------------------------------------------------------ #
 
     @property
-    def fixed_axis(self) -> str:
-        """Name of the shared spatial axis ('x', 'y', or 'z')."""
-        return self._fixed_axis
-
-    @property
-    def fixed_value(self) -> float:
-        """Shared coordinate value along the fixed axis [m]."""
-        return self._fixed_value
-
-    @property
-    def varying_axes(self) -> tuple[str, str]:
-        """The two spatial axes that vary per particle."""
-        return _VARYING_AXES[self._fixed_axis]
-
-    @property
     def _stored_base_keys(self) -> tuple[str, ...]:
-        return self.varying_axes + ("px", "py", "pz", "t", "lam")
+        return ("x", "y", "px", "py", "pz", "t", "lam")
 
     @property
     def base_quantity_keys(self) -> tuple[str, ...]:
@@ -284,7 +219,7 @@ class SliceDistribution:
         return self.base_quantity_keys + self.derived_quantity_keys + self.extra_quantity_keys
 
     def has_quantity(self, key: str) -> bool:
-        return key in self.quantity_keys or key == self._fixed_axis
+        return key in self.quantity_keys or key == "z"
 
     # ------------------------------------------------------------------ #
     # Size                                                                 #
@@ -292,7 +227,7 @@ class SliceDistribution:
 
     @property
     def n(self) -> int:
-        return self._quantities[self.varying_axes[0]].n
+        return self._quantities["x"].n
 
     @property
     def size(self) -> int:
@@ -321,10 +256,10 @@ class SliceDistribution:
         return _make_paq(key, data, spec)
 
     def get_quantity(self, key: str) -> ParticleArrayQuantity:
-        if key == self._fixed_axis:
+        if key == "z":
             raise ValueError(
-                f"'{key}' is the fixed axis of this SliceDistribution. "
-                f"Access its scalar value via .fixed_value or .{key} (returns float)."
+                "'z' is the fixed axis of a SliceDistribution. "
+                "Access its scalar value via .z (returns float)."
             )
         if key in self._quantities:
             return self._quantities[key]
@@ -419,9 +354,10 @@ class SliceDistribution:
                 f"Cannot update derived quantity '{key}' directly. "
                 "Update the underlying base quantities instead."
             )
-        if key == self._fixed_axis:
+        if key == "z":
             raise ValueError(
-                f"'{key}' is the fixed axis. To change its value, set .fixed_value directly."
+                "'z' is the fixed axis of a SliceDistribution. "
+                "To change its value, set .z directly."
             )
         if key not in self._quantities:
             raise KeyError(f"Quantity '{key}' does not exist. Use add_quantity(...) instead.")
@@ -525,11 +461,10 @@ class SliceDistribution:
     def copy(self) -> "SliceDistribution":
         stored_base = set(self._stored_base_keys)
         extras = {k: q.copy() for k, q in self._quantities.items() if k not in stored_base}
-        a1, a2 = self.varying_axes
         return SliceDistribution(
-            fixed_axis=self._fixed_axis,
-            fixed_value=self._fixed_value,
-            **{a1: self._quantities[a1].data.copy(), a2: self._quantities[a2].data.copy()},
+            z=self._z0,
+            x=self._quantities["x"].data.copy(),
+            y=self._quantities["y"].data.copy(),
             px=self.px.copy(), py=self.py.copy(), pz=self.pz.copy(),
             t=self.t.copy(), lam=self.lam.copy(),
             extras=extras or None,
@@ -545,11 +480,10 @@ class SliceDistribution:
                 category=q.category, is_derived=q.is_derived,
                 is_discrete=q.is_discrete, preferred_scale=q.preferred_scale,
             )
-        a1, a2 = self.varying_axes
         return SliceDistribution(
-            fixed_axis=self._fixed_axis,
-            fixed_value=self._fixed_value,
-            **{a1: self._quantities[a1].data[mask], a2: self._quantities[a2].data[mask]},
+            z=self._z0,
+            x=self._quantities["x"].data[mask],
+            y=self._quantities["y"].data[mask],
             px=self.px[mask], py=self.py[mask], pz=self.pz[mask],
             t=self.t[mask], lam=self.lam[mask],
             extras=extras or None,
@@ -653,17 +587,17 @@ class SliceDistribution:
         return slope, intercept
 
     def centroid(self, weight: str | np.ndarray | None = "abslam") -> dict[str, float]:
-        """Centroid of all base quantities.  Fixed axis returns its scalar value."""
-        result: dict[str, float] = {}
-        for key in ("x", "y", "z", "px", "py", "pz", "t", "lam"):
-            result[key] = self._fixed_value if key == self._fixed_axis else self.mean(key, weight=weight)
+        """Centroid of all base quantities.  ``z`` returns the slice's scalar z₀."""
+        result: dict[str, float] = {"z": self._z0}
+        for key in ("x", "y", "px", "py", "pz", "t", "lam"):
+            result[key] = self.mean(key, weight=weight)
         return result
 
     def sigma_dict(self, weight: str | np.ndarray | None = "abslam") -> dict[str, float]:
-        """RMS widths of all base quantities.  Fixed axis returns 0."""
-        result: dict[str, float] = {}
-        for key in ("x", "y", "z", "px", "py", "pz", "t", "lam"):
-            result[key] = 0.0 if key == self._fixed_axis else self.std(key, weight=weight)
+        """RMS widths of all base quantities.  ``z`` returns 0."""
+        result: dict[str, float] = {"z": 0.0}
+        for key in ("x", "y", "px", "py", "pz", "t", "lam"):
+            result[key] = self.std(key, weight=weight)
         return result
 
     # ------------------------------------------------------------------ #
@@ -709,34 +643,27 @@ class SliceDistribution:
         return self._calc_velocities()[2]
 
     def _calc_radial_position(self) -> np.ndarray:
-        # Distance from the fixed-axis line, computed in the varying-axes plane.
-        a1, a2 = self.varying_axes
-        return np.sqrt(self.get_data(a1) ** 2 + self.get_data(a2) ** 2)
+        x = self._quantities["x"].data
+        y = self._quantities["y"].data
+        return np.sqrt(x ** 2 + y ** 2)
 
     def _calc_transverse_speed(self) -> np.ndarray:
-        # Speed in the plane perpendicular to the fixed axis.
-        a1, a2 = self.varying_axes
-        v1 = getattr(self, f"v{a1}")
-        v2 = getattr(self, f"v{a2}")
-        return np.sqrt(v1 ** 2 + v2 ** 2)
+        vx, vy, _ = self._calc_velocities()
+        return np.sqrt(vx ** 2 + vy ** 2)
 
     def _calc_radial_velocity(self) -> np.ndarray:
-        a1, a2 = self.varying_axes
-        q1 = self.get_data(a1)
-        q2 = self.get_data(a2)
-        v1 = getattr(self, f"v{a1}")
-        v2 = getattr(self, f"v{a2}")
-        r = np.sqrt(q1 ** 2 + q2 ** 2) + 1e-30
-        return (q1 * v1 + q2 * v2) / r
+        x = self._quantities["x"].data
+        y = self._quantities["y"].data
+        vx, vy, _ = self._calc_velocities()
+        r = np.sqrt(x ** 2 + y ** 2) + 1e-30
+        return (x * vx + y * vy) / r
 
     def _calc_azimuthal_velocity(self) -> np.ndarray:
-        a1, a2 = self.varying_axes
-        q1 = self.get_data(a1)
-        q2 = self.get_data(a2)
-        v1 = getattr(self, f"v{a1}")
-        v2 = getattr(self, f"v{a2}")
-        r = np.sqrt(q1 ** 2 + q2 ** 2) + 1e-30
-        return (q1 * v2 - q2 * v1) / r
+        x = self._quantities["x"].data
+        y = self._quantities["y"].data
+        vx, vy, _ = self._calc_velocities()
+        r = np.sqrt(x ** 2 + y ** 2) + 1e-30
+        return (x * vy - y * vx) / r
 
     def _calc_xp(self) -> np.ndarray:
         return self._quantities["px"].data / self.p_abs
@@ -754,9 +681,8 @@ class SliceDistribution:
         return self.kinetic_energy / abs(g_e0)
 
     def _calc_current(self) -> np.ndarray:
-        # lam [C/m] * v_fixed_axis [m/s] = I [A] through the slice cross-section.
-        v_fixed = getattr(self, f"v{self._fixed_axis}")
-        return self.lam * v_fixed
+        # lam [C/m] * vz [m/s] = I [A] through the slice cross-section.
+        return self.lam * self._calc_vz()
 
     def _calc_current_abs(self) -> np.ndarray:
         return np.abs(self.current)
@@ -790,7 +716,7 @@ class SliceDistribution:
 
     @property
     def emit_x(self) -> float:
-        """Geometric emittance in x  [m·rad].  Raises if x is the fixed axis."""
+        """Geometric emittance in x [m·rad]."""
         var_x = self.var("x")
         var_xp = self.var("xp")
         cov = self.covariance("x", "xp")
@@ -798,7 +724,7 @@ class SliceDistribution:
 
     @property
     def emit_y(self) -> float:
-        """Geometric emittance in y  [m·rad].  Raises if y is the fixed axis."""
+        """Geometric emittance in y [m·rad]."""
         var_y = self.var("y")
         var_yp = self.var("yp")
         cov = self.covariance("y", "yp")
@@ -814,32 +740,32 @@ class SliceDistribution:
 
     @property
     def alpha_x(self) -> float:
-        """Twiss alpha in x. Raises if x is the fixed axis."""
+        """Twiss alpha in x."""
         return compute_twiss_plane(self, plane="x", weight="lam_abs").alpha
 
     @property
     def beta_x(self) -> float:
-        """Twiss beta in x [m]. Raises if x is the fixed axis."""
+        """Twiss beta in x [m]."""
         return compute_twiss_plane(self, plane="x", weight="lam_abs").beta
 
     @property
     def gamma_x(self) -> float:
-        """Twiss gamma in x [1/m]. Raises if x is the fixed axis."""
+        """Twiss gamma in x [1/m]."""
         return compute_twiss_plane(self, plane="x", weight="lam_abs").gamma_twiss
 
     @property
     def alpha_y(self) -> float:
-        """Twiss alpha in y. Raises if y is the fixed axis."""
+        """Twiss alpha in y."""
         return compute_twiss_plane(self, plane="y", weight="lam_abs").alpha
 
     @property
     def beta_y(self) -> float:
-        """Twiss beta in y [m]. Raises if y is the fixed axis."""
+        """Twiss beta in y [m]."""
         return compute_twiss_plane(self, plane="y", weight="lam_abs").beta
 
     @property
     def gamma_y(self) -> float:
-        """Twiss gamma in y [1/m]. Raises if y is the fixed axis."""
+        """Twiss gamma in y [1/m]."""
         return compute_twiss_plane(self, plane="y", weight="lam_abs").gamma_twiss
 
     @property
@@ -856,25 +782,23 @@ class SliceDistribution:
     # ------------------------------------------------------------------ #
 
     @property
-    def x(self) -> float | np.ndarray:
-        """Horizontal position.  Returns ``float`` when x is the fixed axis."""
-        if self._fixed_axis == "x":
-            return self._fixed_value
+    def x(self) -> np.ndarray:
+        """Horizontal position [m]."""
         return self._quantities["x"].data
 
     @property
-    def y(self) -> float | np.ndarray:
-        """Vertical position.  Returns ``float`` when y is the fixed axis."""
-        if self._fixed_axis == "y":
-            return self._fixed_value
+    def y(self) -> np.ndarray:
+        """Vertical position [m]."""
         return self._quantities["y"].data
 
     @property
-    def z(self) -> float | np.ndarray:
-        """Longitudinal position.  Returns ``float`` when z is the fixed axis."""
-        if self._fixed_axis == "z":
-            return self._fixed_value
-        return self._quantities["z"].data
+    def z(self) -> float:
+        """Longitudinal slice position z₀ [m] — scalar by construction."""
+        return self._z0
+
+    @z.setter
+    def z(self, value: float) -> None:
+        self._z0 = float(value)
 
     @property
     def px(self) -> np.ndarray:
@@ -968,7 +892,7 @@ class SliceDistribution:
 
     @property
     def current(self) -> np.ndarray:
-        """Beam current through the slice cross-section [A] = lam * v_fixed_axis."""
+        """Beam current through the slice cross-section [A] = lam * vz."""
         return self._calc_current()
 
     @property
@@ -991,7 +915,7 @@ class SliceDistribution:
         include_derived: bool = False,
         copy: bool = True,
     ) -> dict:
-        out: dict = {"fixed_axis": self._fixed_axis, "fixed_value": self._fixed_value}
+        out: dict = {"z": self._z0}
         for key in self._stored_base_keys:
             arr = self.get_data(key)
             out[key] = arr.copy() if copy else arr
@@ -1007,6 +931,5 @@ class SliceDistribution:
 
     def to_dataframe(self) -> pd.DataFrame:
         d = self.to_dict()
-        d.pop("fixed_axis")
-        d.pop("fixed_value")
+        d.pop("z")
         return pd.DataFrame.from_dict(d)

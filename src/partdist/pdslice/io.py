@@ -4,7 +4,6 @@ I/O routines for SliceDistribution.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from scipy.constants import c as g_c
@@ -34,8 +33,8 @@ def _loadtxt_pid(filepath: str | Path, dtype: type = float) -> np.ndarray:
 def read_cst_pid_distribution(
     filepath: str | Path,
     *,
-    fixed_axis: Literal["x", "y", "z"] = "z",
-    fixed_value: float | None = None,
+    z: float | None = None,
+    plane_tol: float = 1e-9,
     dtype: type = float,
 ) -> SliceDistribution:
     """
@@ -47,25 +46,30 @@ def read_cst_pid_distribution(
 
     where ``mom_i`` is the normalised momentum :math:`\\beta_i \\gamma_i`
     (dimensionless), ``mass`` [kg] and ``charge`` [C, signed] are the
-    per-particle physical species values, and ``current`` [A] is the current
-    contribution of each macroparticle through the chosen cross-section.
+    per-particle physical species values, and ``current`` [A] is the
+    macroparticle's outward emission current along its own velocity vector.
 
     A .pid file describes a **DC (steady-state) particle distribution**
     crossing a fixed plane, so :class:`SliceDistribution` is its natural
-    container.  The macroparticle current is converted to a linear charge
-    density via ``lam = current / v_d``, where ``v_d`` is the velocity
-    component along the fixed axis — this is the standard relation between
-    line charge density and current for steady flow through a cross-section.
+    container.  This reader assumes the slice plane is perpendicular to
+    z (the standard beam-propagation direction); particles must lie on a
+    common z-plane within ``plane_tol``.  A general 3D point cloud must be
+    loaded as a :class:`ParticleDistribution3D` instead.
+
+    The CST ``current`` is unprojected: converting it to the slice's linear
+    charge density along z takes two steps — project onto the slice normal
+    (``I_z = current * v_z / |v|``), then divide by ``v_z`` (``lam = I_z /
+    v_z``).  The two factors collapse to ``lam = current / |v|``.
 
     Conversion
     ----------
-    - Two varying position columns become the slice's transverse positions.
-    - The fixed-axis column is collapsed to a single ``fixed_value`` (mean
-      across rows when the caller does not specify one).
-    - px, py, pz: ``mom * mass * c**2 / |charge|`` [eV/c], computed per row
+    - x, y       : the two transverse position columns from the file.
+    - z          : the common z₀ of the slice (mean of the file's z column
+      when not given by the caller).
+    - px, py, pz : ``mom * mass * c**2 / |charge|`` [eV/c], computed per row
       so heterogeneous species work.
     - t          : zeros (the format carries no time information).
-    - lam        : ``current / v_d`` [C/m], with sign preserved.
+    - lam        : ``current / |v|`` [C/m], with sign preserved.
     - extras     : raw ``current`` [A], ``mass`` [kg] and ``charge`` [C] are
       preserved as ``cst_current`` / ``cst_mass`` / ``cst_charge`` so no
       information is lost.
@@ -74,23 +78,22 @@ def read_cst_pid_distribution(
     ----------
     filepath
         Path to the .pid file.
-    fixed_axis
-        Axis perpendicular to the slice plane.  Defaults to ``'z'`` (the
-        usual beam-propagation direction).
-    fixed_value
-        Position of the slice plane along ``fixed_axis`` [m].  When ``None``
-        (default), the mean of the corresponding column from the file is
-        used.
+    z
+        z-position of the slice plane [m].  When ``None`` (default), the
+        mean of the file's z column is used; when provided, every
+        particle's z must match it to within ``plane_tol``.
+    plane_tol
+        Maximum allowed spread of the file's z column (and, when ``z`` is
+        given, maximum allowed deviation from it), in meters.  Defaults to
+        ``1e-9`` m.  Raises :class:`ValueError` if particles are not
+        coplanar to this tolerance.
     dtype
         Data type passed to ``np.loadtxt``.
     """
-    if fixed_axis not in ("x", "y", "z"):
-        raise ValueError(f"fixed_axis must be 'x', 'y', or 'z'; got {fixed_axis!r}.")
-
     raw = _loadtxt_pid(filepath, dtype=dtype)
 
-    pos = {"x": raw[:, 0], "y": raw[:, 1], "z": raw[:, 2]}
-    p_norm = {"x": raw[:, 3], "y": raw[:, 4], "z": raw[:, 5]}
+    pos_x, pos_y, pos_z = raw[:, 0], raw[:, 1], raw[:, 2]
+    p_norm_x, p_norm_y, p_norm_z = raw[:, 3], raw[:, 4], raw[:, 5]
     mass = raw[:, 6]
     charge = raw[:, 7]
     current = raw[:, 8].astype(float)
@@ -99,19 +102,34 @@ def read_cst_pid_distribution(
 
     # Per-row rest energy m c^2 / |q|, used to convert mom (= beta*gamma) to eV/c.
     rest_energy_eV = mass * g_c**2 / np.abs(charge)
-    p_eVc = {axis: p_norm[axis] * rest_energy_eV for axis in ("x", "y", "z")}
+    px_eVc = p_norm_x * rest_energy_eV
+    py_eVc = p_norm_y * rest_energy_eV
+    pz_eVc = p_norm_z * rest_energy_eV
 
     # gamma from |p_norm|^2 = (beta*gamma)^2 = gamma^2 - 1.
-    p_norm_sq = p_norm["x"] ** 2 + p_norm["y"] ** 2 + p_norm["z"] ** 2
+    p_norm_sq = p_norm_x ** 2 + p_norm_y ** 2 + p_norm_z ** 2
     gamma = np.sqrt(1.0 + p_norm_sq)
-    v_d = (p_norm[fixed_axis] / gamma) * g_c  # [m/s] along the fixed axis
-    lam = current / v_d                       # [C/m], sign-preserving
+    v_mag = np.sqrt(p_norm_sq) / gamma * g_c  # [m/s], total particle speed
+    lam = current / v_mag                     # [C/m], sign-preserving
 
-    if fixed_value is None:
-        fixed_value = float(np.mean(pos[fixed_axis]))
+    spread = float(np.ptp(pos_z))
+    if spread > plane_tol:
+        raise ValueError(
+            f"CST .pid particles are not coplanar along z: "
+            f"position spread {spread:.3e} m exceeds plane_tol={plane_tol:.3e} m "
+            f"(min={float(pos_z.min()):.6g}, max={float(pos_z.max()):.6g}). "
+            f"Increase plane_tol, or load the file as a ParticleDistribution3D instead."
+        )
 
-    varying = {"x": ("y", "z"), "y": ("x", "z"), "z": ("x", "y")}[fixed_axis]
-    pos_kwargs = {axis: pos[axis] for axis in varying}
+    if z is None:
+        z = float(np.mean(pos_z))
+    else:
+        deviation = float(np.max(np.abs(pos_z - z)))
+        if deviation > plane_tol:
+            raise ValueError(
+                f"CST .pid particles deviate from z={z:.6g} m: max deviation "
+                f"{deviation:.3e} m exceeds plane_tol={plane_tol:.3e} m."
+            )
 
     extras = {
         "cst_current": ParticleArrayQuantity(
@@ -150,10 +168,10 @@ def read_cst_pid_distribution(
     }
 
     return SliceDistribution(
-        fixed_axis=fixed_axis,
-        fixed_value=fixed_value,
-        **pos_kwargs,
-        px=p_eVc["x"], py=p_eVc["y"], pz=p_eVc["z"],
+        z=z,
+        x=pos_x,
+        y=pos_y,
+        px=px_eVc, py=py_eVc, pz=pz_eVc,
         t=np.zeros(n, dtype=float),
         lam=lam,
         extras=extras,
