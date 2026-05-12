@@ -690,12 +690,26 @@ class SliceDistribution:
             self._quantities["pz"].data * factor,
         )
 
-    def momentum_evc(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return (
-            self._quantities["px"].data.copy(),
-            self._quantities["py"].data.copy(),
-            self._quantities["pz"].data.copy(),
-        )
+    def momentum_evc(
+        self,
+        *,
+        copy: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (px, py, pz) in eV/c.
+
+        With ``copy=True`` (default) the caller gets independent arrays that
+        can be mutated freely; the slice's internal state is protected.
+        With ``copy=False`` the caller receives the underlying ``_quantities``
+        arrays directly — zero allocation, but mutating them mutates the
+        slice. Use the zero-copy path only when the caller is read-only and
+        N is large enough that the copy cost matters.
+        """
+        px_data = self._quantities["px"].data
+        py_data = self._quantities["py"].data
+        pz_data = self._quantities["pz"].data
+        if copy:
+            return px_data.copy(), py_data.copy(), pz_data.copy()
+        return px_data, py_data, pz_data
 
     # ------------------------------------------------------------------ #
     # Beam-physics shortcuts                                               #

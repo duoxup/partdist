@@ -828,11 +828,29 @@ class ParticleDistribution3D:
         pz_data = self._quantities["pz"].data
         return px_data * factor, py_data * factor, pz_data * factor
 
-    def momentum_evc(self, *, m0: float = g_m0, e0: float = g_e0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def momentum_evc(
+        self,
+        *,
+        m0: float = g_m0,
+        e0: float = g_e0,
+        copy: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (px, py, pz) in eV/c.
+
+        With ``copy=True`` (default) the caller gets independent arrays that
+        can be mutated freely; the distribution's internal state is protected.
+        With ``copy=False`` the caller receives the underlying ``_quantities``
+        arrays directly — zero allocation, but mutating them mutates the
+        distribution. Use the zero-copy path only when the caller is
+        read-only and N is large enough that the ~24 MB-per-million-particle
+        copy cost matters.
+        """
         px_data = self._quantities["px"].data
         py_data = self._quantities["py"].data
         pz_data = self._quantities["pz"].data
-        return px_data.copy(), py_data.copy(), pz_data.copy()
+        if copy:
+            return px_data.copy(), py_data.copy(), pz_data.copy()
+        return px_data, py_data, pz_data
 
     #%% shortcuts for statistics
     @property
