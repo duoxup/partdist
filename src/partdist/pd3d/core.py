@@ -107,6 +107,7 @@ class ParticleDistribution3D:
         extras: Mapping[str, ArrayLike] | Mapping[str, ParticleArrayQuantity] | None = None,
     ) -> None:
         self._quantities: Dict[str, ParticleArrayQuantity] = {}
+        self._velocity_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
 
         base_arrays = {
             "x":  _as_1d_float_array(x,  "x"),
@@ -422,6 +423,7 @@ class ParticleDistribution3D:
         if key in self._BASE_SPECS:
             # Base quantities: only data may be updated, metadata is fixed.
             out._quantities[key].data = np.asarray(new_q.data, dtype=float).reshape(-1)
+            out._velocity_cache = None
             return out
     
         # Extra quantities
@@ -744,12 +746,14 @@ class ParticleDistribution3D:
         return self.beta * g_c
 
     def _calc_velocities(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from .utils import momentum_evc_to_velocity
-        return momentum_evc_to_velocity(
-            self._quantities["px"].data,
-            self._quantities["py"].data,
-            self._quantities["pz"].data,
-        )
+        if self._velocity_cache is None:
+            from .utils import momentum_evc_to_velocity
+            self._velocity_cache = momentum_evc_to_velocity(
+                self._quantities["px"].data,
+                self._quantities["py"].data,
+                self._quantities["pz"].data,
+            )
+        return self._velocity_cache
 
     def _calc_vx(self) -> np.ndarray:
         return self._calc_velocities()[0]
