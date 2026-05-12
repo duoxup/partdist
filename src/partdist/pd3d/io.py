@@ -681,6 +681,19 @@ def to_ocelot_particle_array(
         E0_eV = float(np.mean(E_eV))
 
     E0_GeV = E0_eV * 1e-9
+    # Compute reference momentum from raw momenta to avoid floating-point
+    # cancellation when E0 ≈ m_e (all particles near rest).
+    p_sq = px_evc ** 2 + py_evc ** 2 + pz_evc ** 2
+    if total_weight > 0.0:
+        p0c_sq_eV2 = float(np.dot(weights, p_sq) / total_weight)
+    else:
+        p0c_sq_eV2 = float(np.mean(p_sq))
+    if p0c_sq_eV2 <= 0.0:
+        raise ValueError(
+            f"to_ocelot_particle_array requires a non-zero reference momentum "
+            f"(got p0c²={p0c_sq_eV2} eV² from E0={E0_eV} eV, m_e={m_e_eV} eV). "
+            f"Cannot define x'=px/p0c when the centroid is at rest."
+        )
     p0c_eV = float(np.sqrt(max(E0_eV ** 2 - m_e_eV ** 2, 0.0)))
 
     # ocelot phase-space coordinates
