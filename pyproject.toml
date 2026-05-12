@@ -14,6 +14,7 @@ dependencies = [
   "scipy",
   "matplotlib",
   "paramstudy",
+  "pandas",
 ]
 
 [project.optional-dependencies]
