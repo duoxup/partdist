@@ -880,10 +880,16 @@ class ParticleDistribution3D:
     
     @property
     def emit_z(self) -> float:
+        """Longitudinal geometric emittance in (z, delta) phase space [m].
+
+        delta = (|p| - <|p|>)/<|p|> is dimensionless, so emit_z carries
+        the units of z (metres). The previous (z, pz) form mixed metres
+        with eV/c and was not unit-coherent; see docs/pd3d_review.md §2.
+        """
         var_z = self.var('z')
-        var_pz = self.var('pz')
-        cov_zpz = self.covariance('z', 'pz')
-        return float(np.sqrt(var_z * var_pz - cov_zpz**2))
+        var_d = self.var('delta')
+        cov_zd = self.covariance('z', 'delta')
+        return float(np.sqrt(max(var_z * var_d - cov_zd ** 2, 0.0)))
 
     @property
     def nemit_x(self) -> float:
@@ -895,6 +901,10 @@ class ParticleDistribution3D:
 
     @property
     def nemit_z(self) -> float:
+        """Normalised longitudinal emittance beta0*gamma0*emit_z(z, delta) [m].
+
+        One of several conventions; uses the (z, delta) canonical pair.
+        """
         return float(self.beta0*self.gamma0*self.emit_z)
     
     @property
