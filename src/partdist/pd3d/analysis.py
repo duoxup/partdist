@@ -1477,6 +1477,18 @@ def fit_current_profile(
 
     z_centers = np.asarray(z_centers, dtype=float)
     I_z       = np.asarray(I_z,       dtype=float)
+
+    if z_centers.shape != I_z.shape:
+        raise ValueError(
+            f"z_centers and I_z must have the same shape; got {z_centers.shape} vs {I_z.shape}."
+        )
+    if z_centers.size == 0:
+        raise ValueError("fit_current_profile received empty z_centers / I_z arrays.")
+    if z_centers.size < 3:
+        raise ValueError(
+            f"fit_current_profile needs at least 3 bins to fit a 3-parameter profile; got {z_centers.size}."
+        )
+
     I_peak    = float(I_z.max())
 
     # Initial guesses from weighted moments.
