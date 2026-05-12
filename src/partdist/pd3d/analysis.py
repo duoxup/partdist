@@ -176,6 +176,14 @@ class LongitudinalLinearityResult:
 
 
 @dataclass(frozen=True)
+class AnalyzeLongitudinalTrendResult:
+    """Bundle of pz(z) binned profile, fitted trend, and residual analysis."""
+    profile: "BinnedProfileResult"
+    trend: "TrendFitResult"
+    residuals: "ResidualAnalysisResult"
+
+
+@dataclass(frozen=True)
 class ResidualAnalysisResult:
     """
     Result of residual analysis for y relative to a fitted trend f(x).
@@ -1095,14 +1103,18 @@ def analyze_longitudinal_trend(
     poly_order: int = 1,
     spline_smoothing: float = 0.0,
     spline_weight: Literal["count", "sqrt_count", "weight_sum", "sqrt_weight_sum", "none"] = "sqrt_count",
-) -> dict:
+) -> AnalyzeLongitudinalTrendResult:
     """
     Convenience wrapper for longitudinal pz(z) analysis.
 
-    Returns a dictionary containing:
-    - "profile": BinnedProfileResult
-    - "trend": TrendFitResult
-    - "residuals": ResidualAnalysisResult
+    Returns
+    -------
+    AnalyzeLongitudinalTrendResult
+        Frozen dataclass with fields:
+
+        - ``profile``: :class:`BinnedProfileResult`
+        - ``trend``: :class:`TrendFitResult`
+        - ``residuals``: :class:`ResidualAnalysisResult`
     """
     profile = compute_binned_profile(
         dist,
@@ -1133,11 +1145,11 @@ def analyze_longitudinal_trend(
         mask=mask,
     )
 
-    return {
-        "profile": profile,
-        "trend": trend,
-        "residuals": residuals,
-    }
+    return AnalyzeLongitudinalTrendResult(
+        profile=profile,
+        trend=trend,
+        residuals=residuals,
+    )
 
 def compute_longitudinal_linearity(
     dist: "ParticleDistribution",
