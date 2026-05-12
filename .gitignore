@@ -21,3 +21,7 @@ venv/
 tests/data/
 
 .DS_Store
+
+.worktrees/
+.codex/
+.deepseek/
