@@ -159,6 +159,7 @@ class ParticleDistribution3D:
     @classmethod
     def from_arrays(
         cls,
+        *,
         x: ArrayLike,
         y: ArrayLike,
         z: ArrayLike,
