@@ -23,5 +23,5 @@ local/
 .DS_Store
 
 .worktrees/
-.codex/
-.deepseek/
+.codex
+.deepseek
