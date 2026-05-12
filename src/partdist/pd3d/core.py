@@ -774,10 +774,10 @@ class ParticleDistribution3D:
         return (self.x * self.vy - self.y * self.vx) / r
 
     def _calc_xp(self) -> np.ndarray:
-        return self._quantities["px"].data / self.p_abs
+        return self._quantities["px"].data / self._quantities["pz"].data
 
     def _calc_yp(self) -> np.ndarray:
-        return self._quantities["py"].data / self.p_abs
+        return self._quantities["py"].data / self._quantities["pz"].data
 
     def _calc_delta(self) -> np.ndarray:
         p = self.p_abs
