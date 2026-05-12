@@ -30,8 +30,10 @@ class PhaseSpacePlaneResult:
     -----
     - geometric_emittance is computed from the 2x2 covariance matrix in (u, u')
     - normalized_emittance is defined here as:
-          eps_n = <beta*gamma> * eps_geom
-      where <beta*gamma> is the weighted mean over the selected particles
+          eps_n = beta0*gamma0 * eps_geom
+      where beta0*gamma0 = p_ref / (m0 c) and p_ref is the charge-weighted
+      mean of |p| over the selected particles (textbook convention;
+      matches MAD-X, ASTRA, Ocelot)
     """
     plane: str
 
@@ -393,7 +395,7 @@ def compute_phase_space_plane(
     mask : array-like of bool, optional
         Particle mask.
     m0 : float
-        Rest mass [kg], used for normalized emittance via <p/(m0 c)>.
+        Rest mass [kg], used for normalized emittance via beta0*gamma0 = p_ref/(m0 c).
 
     Returns
     -------
@@ -447,8 +449,13 @@ def compute_phase_space_plane(
     covariance = _weighted_cov_2x2(u_sel, up_sel, w_sel)
     alpha, beta, gamma_twiss, eps_geom = twiss_from_covariance_2x2(covariance)
 
-    mean_beta_gamma = _weighted_mean(p_abs_sel / (m0 * g_c), w_sel)
-    eps_norm = float(mean_beta_gamma * eps_geom)
+    # beta0 * gamma0 from the charge-weighted reference momentum (textbook
+    # convention; matches MAD-X, ASTRA, Ocelot). Equivalent to the weighted
+    # mean of per-particle beta*gamma by linearity, but expressed explicitly
+    # as p_ref / (m0 c) to make the reference-particle convention clear.
+    p_ref = _weighted_mean(p_abs_sel, w_sel)
+    beta_gamma_ref = float(p_ref / (m0 * g_c))
+    eps_norm = float(beta_gamma_ref * eps_geom)
 
     return PhaseSpacePlaneResult(
         plane=plane,
@@ -460,7 +467,7 @@ def compute_phase_space_plane(
         covariance=covariance,
         geometric_emittance=eps_geom,
         normalized_emittance=eps_norm,
-        mean_beta_gamma=float(mean_beta_gamma),
+        mean_beta_gamma=beta_gamma_ref,
         alpha=alpha,
         beta=beta,
         gamma_twiss=gamma_twiss,
