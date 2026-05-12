@@ -666,10 +666,10 @@ class SliceDistribution:
         return (x * vy - y * vx) / r
 
     def _calc_xp(self) -> np.ndarray:
-        return self._quantities["px"].data / self.p_abs
+        return self._quantities["px"].data / self._quantities["pz"].data
 
     def _calc_yp(self) -> np.ndarray:
-        return self._quantities["py"].data / self.p_abs
+        return self._quantities["py"].data / self._quantities["pz"].data
 
     def _calc_lam_abs(self) -> np.ndarray:
         return np.abs(self.lam)
