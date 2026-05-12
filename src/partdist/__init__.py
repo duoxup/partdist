@@ -1,12 +1,16 @@
+"""
+partdist — particle distribution containers, I/O, analysis, and visualisation.
+
+Top-level re-exports cover the stable surface. Less-frequently-used
+manipulator routines (centering, masking, energy/chirp scaling, ...)
+live under `partdist.pd3d.manipulator`; import them from there directly.
+"""
+
 from importlib.metadata import version, PackageNotFoundError
 try:
     __version__ = version("partdist")
 except PackageNotFoundError:
     __version__ = "0.0.0.dev"
-    
-# import sys as _sys 
-
-# from . import pd3d
 
 from .particle_array_quantity import ParticleArrayQuantity
 from .pd3d.core import ParticleDistribution3D, ParticleDistribution
@@ -25,10 +29,6 @@ from .pd3d.manipulator import (
     set_linear_chirp,
     match_twiss_xy,
                                )
-
-
-
-# _sys.modules[__name__ + '.pd3d'] = pd3d
 
 
 __all__ = [
