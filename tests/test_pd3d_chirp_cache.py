@@ -16,21 +16,25 @@ def _make_chirped_dist(n=5000):
     )
 
 
-def test_chirp_polyfit_runs_once_for_quadratic_and_cubic():
-    """Accessing quadratic_chirp then cubic_chirp should trigger exactly one polyfit."""
+def test_chirp_polyfit_runs_once_for_quadratic_and_cubic(monkeypatch):
+    """Accessing quadratic_chirp then cubic_chirp must run np.polyfit exactly once."""
+    import partdist.pd3d.core as pd3d_core
+
     d = _make_chirped_dist()
-    real_calc = d._calc_chirp_poly_coeffs
-    count = 0
 
-    def counting():
-        nonlocal count
-        count += 1
-        return real_calc()
+    call_count = 0
+    original_polyfit = pd3d_core.np.polyfit
 
-    d._calc_chirp_poly_coeffs = counting
+    def counting_polyfit(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original_polyfit(*args, **kwargs)
+
+    monkeypatch.setattr(pd3d_core.np, "polyfit", counting_polyfit)
+
     _ = d.quadratic_chirp
     _ = d.cubic_chirp
-    assert count == 1, f"Expected 1 polyfit call, got {count}"
+    assert call_count == 1, f"Expected 1 np.polyfit call, got {call_count}"
 
 
 def test_chirp_cache_invalidates_on_pz_update():

@@ -863,15 +863,11 @@ class ParticleDistribution3D:
 
     @property
     def quadratic_chirp(self) -> float:  # m^-2
-        if self._chirp_poly_cache is None:
-            self._calc_chirp_poly_coeffs()
-        return float(self._chirp_poly_cache[1])  # type: ignore[index]
+        return float(self._calc_chirp_poly_coeffs()[1])
 
     @property
     def cubic_chirp(self) -> float:  # m^-3
-        if self._chirp_poly_cache is None:
-            self._calc_chirp_poly_coeffs()
-        return float(self._chirp_poly_cache[0])  # type: ignore[index]
+        return float(self._calc_chirp_poly_coeffs()[0])
 
     @property
     def cor_ekin(self) -> float: #eV
