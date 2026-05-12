@@ -123,6 +123,7 @@ class SliceDistribution:
     ) -> None:
         self._z0: float = float(z)
         self._quantities: Dict[str, ParticleArrayQuantity] = {}
+        self._velocity_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
 
         for axis, arr_in in (("x", x), ("y", y)):
             arr = _as_1d_float_array(arr_in, axis)
@@ -380,6 +381,7 @@ class SliceDistribution:
         if key in set(out._stored_base_keys):
             # Base quantities: data only, metadata is immutable
             out._quantities[key].data = np.asarray(new_q.data, dtype=float).reshape(-1)
+            out._velocity_cache = None
         elif update_meta and isinstance(value, ParticleArrayQuantity):
             out._quantities[key] = new_q
         else:
@@ -621,12 +623,14 @@ class SliceDistribution:
         return self.beta * g_c
 
     def _calc_velocities(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        from ..pd3d.utils import momentum_evc_to_velocity
-        return momentum_evc_to_velocity(
-            self._quantities["px"].data,
-            self._quantities["py"].data,
-            self._quantities["pz"].data,
-        )
+        if self._velocity_cache is None:
+            from ..pd3d.utils import momentum_evc_to_velocity
+            self._velocity_cache = momentum_evc_to_velocity(
+                self._quantities["px"].data,
+                self._quantities["py"].data,
+                self._quantities["pz"].data,
+            )
+        return self._velocity_cache
 
     def _calc_vx(self) -> np.ndarray:
         return self._calc_velocities()[0]
