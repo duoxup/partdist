@@ -14,23 +14,16 @@ from ..particle_array_quantity import (
 )
 
 from .analysis import compute_twiss_plane, current_profile_z
+from .._array_helpers import as_1d_array as _as_1d_array_kw
+from .._array_helpers import as_1d_float_array as _as_1d_float_array
 
 
 ArrayLike = Union[float, Sequence[float], np.ndarray]
 
 
 def _as_1d_array(a: ArrayLike, name: str) -> np.ndarray:
-    arr = np.asarray(a).reshape(-1)
-    if arr.ndim != 1:
-        raise ValueError(f"{name} must be a 1D array, got shape {arr.shape}.")
-    return arr
-
-
-def _as_1d_float_array(a: ArrayLike, name: str) -> np.ndarray:
-    arr = np.asarray(a, dtype=float).reshape(-1)
-    if arr.ndim != 1:
-        raise ValueError(f"{name} must be a 1D array, got shape {arr.shape}.")
-    return arr
+    """Thin wrapper: forward to canonical helper with positional ``name``."""
+    return _as_1d_array_kw(a, name=name)
 
 
 class ParticleDistribution3D:

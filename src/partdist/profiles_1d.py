@@ -5,15 +5,14 @@ from typing import Callable, Iterable, Literal
 
 import numpy as np
 
+from ._array_helpers import as_1d_float_array as _as_1d_float_array_impl
+
 ArrayLike = float | Iterable[float] | np.ndarray
 NormMode = Literal["none", "peak", "area"]
 
 
 def _as_1d_float_array(x: ArrayLike) -> np.ndarray:
-    arr = np.asarray(x, dtype=float)
-    if arr.ndim == 0:
-        arr = arr.reshape(1)
-    return arr
+    return _as_1d_float_array_impl(x, "x")
 
 
 def _normalize_profile(

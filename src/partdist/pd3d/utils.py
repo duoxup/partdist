@@ -6,6 +6,7 @@ import numpy as np
 
 from scipy.constants import c as g_c, m_e as g_m0, e as g_e0
 from partdist import kinematics as relconv
+from .._array_helpers import as_1d_array as _as_1d_array
 
 if TYPE_CHECKING:
     from .core import ParticleDistribution
@@ -20,34 +21,6 @@ def _copy_or_inplace(dist: "ParticleDistribution", inplace: bool) -> "ParticleDi
     Return the original distribution if inplace=True, otherwise a copy.
     """
     return dist if inplace else dist.copy()
-
-
-def _as_1d_array(data: ArrayLike, *, dtype=None, name: str = "array") -> np.ndarray:
-    """
-    Convert input to a 1D numpy array.
-
-    Parameters
-    ----------
-    data : array-like
-        Input data.
-    dtype : optional
-        Target dtype passed to np.asarray.
-    name : str
-        Name used in error messages.
-
-    Returns
-    -------
-    np.ndarray
-        Flattened 1D array.
-    """
-    arr = np.asarray(data, dtype=dtype)
-
-    if arr.ndim == 0:
-        arr = arr.reshape(1)
-    else:
-        arr = arr.reshape(-1)
-
-    return arr
 
 
 def _validate_length(arr: np.ndarray, n: int, *, name: str = "array") -> None:
