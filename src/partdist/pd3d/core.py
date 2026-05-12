@@ -108,6 +108,7 @@ class ParticleDistribution3D:
     ) -> None:
         self._quantities: Dict[str, ParticleArrayQuantity] = {}
         self._velocity_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+        self._chirp_poly_cache: np.ndarray | None = None
 
         base_arrays = {
             "x":  _as_1d_float_array(x,  "x"),
@@ -424,6 +425,7 @@ class ParticleDistribution3D:
             # Base quantities: only data may be updated, metadata is fixed.
             out._quantities[key].data = np.asarray(new_q.data, dtype=float).reshape(-1)
             out._velocity_cache = None
+            out._chirp_poly_cache = None
             return out
     
         # Extra quantities
@@ -851,19 +853,25 @@ class ParticleDistribution3D:
         return float(self.covariance('z', 'delta') / self.var('z'))
 
     def _calc_chirp_poly_coeffs(self) -> np.ndarray:
-        z = self.get_data('z')
-        delta = self._calc_delta()
-        w = self.Q_abs
-        z_c = z - float(np.average(z, weights=w))
-        return np.polyfit(z_c, delta, deg=3, w=w)  # [a3, a2, a1, a0]
+        if self._chirp_poly_cache is None:
+            z = self.get_data('z')
+            delta = self._calc_delta()
+            w = self.Q_abs
+            z_c = z - float(np.average(z, weights=w))
+            self._chirp_poly_cache = np.polyfit(z_c, delta, deg=3, w=w)  # [a3, a2, a1, a0]
+        return self._chirp_poly_cache
 
     @property
     def quadratic_chirp(self) -> float:  # m^-2
-        return float(self._calc_chirp_poly_coeffs()[1])
+        if self._chirp_poly_cache is None:
+            self._calc_chirp_poly_coeffs()
+        return float(self._chirp_poly_cache[1])  # type: ignore[index]
 
     @property
     def cubic_chirp(self) -> float:  # m^-3
-        return float(self._calc_chirp_poly_coeffs()[0])
+        if self._chirp_poly_cache is None:
+            self._calc_chirp_poly_coeffs()
+        return float(self._chirp_poly_cache[0])  # type: ignore[index]
 
     @property
     def cor_ekin(self) -> float: #eV
