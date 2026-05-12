@@ -1393,8 +1393,8 @@ def write_genesis_distribution(
             _write_dataset_with_unit(f, slicename + "x", sd["x"], "m")
             _write_dataset_with_unit(f, slicename + "y", sd["y"], "m")
             _write_dataset_with_unit(f, slicename + "theta", sd["theta"], "rad")
-            _write_dataset_with_unit(f, slicename + "px", sd["px"], "rad")
-            _write_dataset_with_unit(f, slicename + "py", sd["py"], "rad")
+            _write_dataset_with_unit(f, slicename + "px", sd["px"], "")
+            _write_dataset_with_unit(f, slicename + "py", sd["py"], "")
             _write_dataset_with_unit(f, slicename + "gamma", sd["gamma"], " ")
 
         # Root datasets
