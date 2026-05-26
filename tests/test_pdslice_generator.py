@@ -340,3 +340,110 @@ class TestMakeSliceSmoke:
                 pz=Gaussian(sig=1e3, mean=-5e5),  # Negative mean ensures backward motion
                 seed=0,
             )
+
+
+class TestMakeSliceIntegration:
+    def test_full_gaussian_stats(self):
+        """Each marginal should match its input σ within sampling noise."""
+        d = make_slice(
+            20_000,
+            I_total=1e-3,
+            x=Gaussian(sig=2e-4),
+            y=Gaussian(sig=3e-4),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=2e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=0,
+        )
+        assert abs(d.get_data("x").std() - 2e-4) < 5e-6
+        assert abs(d.get_data("y").std() - 3e-4) < 5e-6
+        assert abs(d.get_data("px").std() - 1e3) < 50.0
+        assert abs(d.get_data("py").std() - 2e3) < 50.0
+        assert abs(d.get_data("pz").mean() - 5e5) < 50.0
+
+    def test_uniform_transverse_with_gauss_longitudinal(self):
+        d = make_slice(
+            10_000,
+            I_total=1e-3,
+            x=Uniform(L=2e-3),
+            y=Uniform(L=2e-3),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=1,
+        )
+        assert np.all(np.abs(d.get_data("x")) <= 1e-3 + 1e-12)
+        assert np.all(np.abs(d.get_data("y")) <= 1e-3 + 1e-12)
+
+    def test_plateau_pz(self):
+        d = make_slice(
+            10_000,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4),
+            y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=1e3),
+            pz=Plateau(L=2e4, r=2e3, mean=5e5),
+            seed=2,
+        )
+        pz = d.get_data("pz")
+        assert abs(pz.mean() - 5e5) < 5e2
+        assert np.all((pz >= 5e5 - 2e4) & (pz <= 5e5 + 2e4))
+
+    def test_radial_uniform_transverse_position(self):
+        d = make_slice(
+            10_000,
+            I_total=1e-3,
+            transverse=RadialUniform(R=1e-3),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=3,
+        )
+        r = np.sqrt(d.get_data("x") ** 2 + d.get_data("y") ** 2)
+        assert np.all(r <= 1e-3 + 1e-12)
+
+    def test_radial_uniform_transverse_momentum(self):
+        d = make_slice(
+            10_000,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4),
+            y=Gaussian(sig=1e-4),
+            transverse_momentum=RadialUniform(R=2e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=4,
+        )
+        rp = np.sqrt(d.get_data("px") ** 2 + d.get_data("py") ** 2)
+        assert np.all(rp <= 2e3 + 1e-9)
+
+    def test_isotropic_momentum(self):
+        d = make_slice(
+            10_000,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4),
+            y=Gaussian(sig=1e-4),
+            momentum=Isotropic(p_mag=5e5),
+            seed=5,
+        )
+        p = np.sqrt(
+            d.get_data("px") ** 2 + d.get_data("py") ** 2 + d.get_data("pz") ** 2
+        )
+        np.testing.assert_allclose(p, 5e5, rtol=1e-10)
+        assert np.all(d.get_data("pz") >= -1e-9)
+
+    def test_gaussian_pz_truncation_is_preserved(self):
+        """Truncated Gaussian must NOT post-filter — n is exact."""
+        n = 5000
+        d = make_slice(
+            n,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4),
+            y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5, cut=2.0),
+            seed=6,
+        )
+        assert d.n == n
+        pz = d.get_data("pz")
+        assert np.all(np.abs(pz - 5e5) <= 2.0 * 1e3 + 1e-9)
