@@ -58,7 +58,9 @@ def test_emit_z_scales_linearly_with_z():
     np.testing.assert_allclose(d2.emit_z, 2.0 * d1.emit_z, rtol=5e-2)
 
 
-def test_nemit_z_is_beta0_gamma0_times_emit_z():
-    """The body of nemit_z is unchanged; only the interpretation of emit_z changed."""
+def test_nemit_z_is_mean_beta_gamma_times_emit_z():
+    """nemit_z uses <βγ> = <|p|>/(m_e·c), not the single-particle β₀·γ₀ from <E_k>."""
+    from scipy.constants import c as c_light, m_e
     d = _make_chirped_dist()
-    np.testing.assert_allclose(d.nemit_z, d.beta0 * d.gamma0 * d.emit_z, rtol=1e-12)
+    bg = d.mean("p_abs_si") / (m_e * c_light)
+    np.testing.assert_allclose(d.nemit_z, bg * d.emit_z, rtol=1e-12)

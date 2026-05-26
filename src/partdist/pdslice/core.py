@@ -736,10 +736,23 @@ class SliceDistribution:
 
     @property
     def gamma0(self) -> float:
+        """γ of a single particle whose kinetic energy equals ``<E_k>`` (lam-weighted).
+
+        Not the per-particle weighted mean ``<γ>``, and ``beta0 * gamma0``
+        is NOT ``<βγ>``. For the normalized-emittance scale factor use
+        ``<βγ> = self.mean('p_abs_si') / (m_e * c)``; this is what
+        ``nemit_x/y`` and ``compute_phase_space_plane(...).normalized_emittance``
+        use internally.
+        """
         return float(relconv.gamma_from_ke_eV(self.mean("kinetic_energy_eV")))
 
     @property
     def beta0(self) -> float:
+        """β of a single particle whose kinetic energy equals ``<E_k>`` (lam-weighted).
+
+        Companion to :pyattr:`gamma0`; see that docstring for the
+        distribution-average alternative ``<βγ>``.
+        """
         return float(relconv.beta_from_ke_eV(self.mean("kinetic_energy_eV")))
 
     @property
@@ -760,11 +773,18 @@ class SliceDistribution:
 
     @property
     def nemit_x(self) -> float:
-        return float(self.beta0 * self.gamma0 * self.emit_x)
+        """Normalised transverse emittance ``<βγ> · emit_x`` [m·rad].
+
+        Uses ``<βγ> = <|p|>/(m_e·c)`` (lam-weighted distribution average,
+        textbook convention; matches ``compute_phase_space_plane(...).normalized_emittance``).
+        NOT the single-particle ``beta0 * gamma0`` derived from ``<E_k>``.
+        """
+        return float(self.mean("p_abs_si") / (g_m0 * g_c) * self.emit_x)
 
     @property
     def nemit_y(self) -> float:
-        return float(self.beta0 * self.gamma0 * self.emit_y)
+        """Normalised transverse emittance ``<βγ> · emit_y`` [m·rad]; see :pyattr:`nemit_x`."""
+        return float(self.mean("p_abs_si") / (g_m0 * g_c) * self.emit_y)
 
     @property
     def alpha_x(self) -> float:
