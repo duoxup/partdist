@@ -2196,29 +2196,48 @@ def extract_core_ellipse(
         raise ValueError(f"max_iter must be >= 1, got {max_iter!r}.")
     if planes is None:
         planes = _ELLIPSE_DEFAULT_PLANES
-    current = dist
+
+    # Pull every needed column once. Derived quantities (xp, yp, delta, …) are
+    # then never recomputed across iterations, and the original distribution is
+    # never re-sliced — we maintain a survival mask and slice exactly once at
+    # the end.
+    cols: dict[str, np.ndarray] = {}
+    for key1, key2 in planes:
+        for k in (key1, key2):
+            if k not in cols:
+                cols[k] = dist.get_data(k).astype(float)
+    w = _get_weight_array(dist, weight, absolute=True)
+    keep = np.ones(len(w), dtype=bool)
+    n_sigma_sq = n_sigma ** 2
+
     for _ in range(max_iter):
-        w = _get_weight_array(current, weight, absolute=True)
-        combined = np.ones(len(current.get_data("x")), dtype=bool)
+        w_eff = w * keep                 # particles with keep=False contribute zero weight
+        sw = float(w_eff.sum())
+        if sw == 0.0:
+            break
+        new_keep = keep.copy()
         for key1, key2 in planes:
-            v1 = current.get_data(key1).astype(float)
-            v2 = current.get_data(key2).astype(float)
-            m1 = float(np.average(v1, weights=w))
-            m2 = float(np.average(v2, weights=w))
+            v1 = cols[key1]
+            v2 = cols[key2]
+            m1 = float((w_eff * v1).sum() / sw)
+            m2 = float((w_eff * v2).sum() / sw)
             d1 = v1 - m1
             d2 = v2 - m2
-            s11 = float(np.average(d1 ** 2,      weights=w))
-            s12 = float(np.average(d1 * d2,      weights=w))
-            s22 = float(np.average(d2 ** 2,      weights=w))
-            det = s11 * s22 - s12 ** 2
-            if det <= 0:
+            s11 = float((w_eff * d1 * d1).sum() / sw)
+            s12 = float((w_eff * d1 * d2).sum() / sw)
+            s22 = float((w_eff * d2 * d2).sum() / sw)
+            det = s11 * s22 - s12 * s12
+            if det <= 0.0:
                 continue
-            maha2 = (s22 * d1 ** 2 - 2.0 * s12 * d1 * d2 + s11 * d2 ** 2) / det
-            combined &= maha2 <= n_sigma ** 2
-        if combined.all():
+            maha2 = (s22 * d1 * d1 - 2.0 * s12 * d1 * d2 + s11 * d2 * d2) / det
+            new_keep &= maha2 <= n_sigma_sq
+        if int(new_keep.sum()) == int(keep.sum()):
             break
-        current = current.slice(combined)
-    return current
+        keep = new_keep
+
+    if keep.all():
+        return dist
+    return dist.slice(keep)
 
 
 def extract_core_profile_fit(
