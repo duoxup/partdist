@@ -75,3 +75,45 @@ class TestShapeConstruction:
         g = Gaussian(sig=1e-4)
         with pytest.raises(Exception):
             g.sig = 2e-4
+
+
+class TestGaussianSampling:
+    def test_untruncated_size_and_stats(self):
+        g = Gaussian(sig=2.0, mean=5.0)
+        rng = np.random.default_rng(0)
+        samples = g._sample(50_000, rng)
+        assert samples.shape == (50_000,)
+        assert abs(samples.mean() - 5.0) < 0.05
+        assert abs(samples.std() - 2.0) < 0.05
+
+    def test_truncated_respects_bounds(self):
+        g = Gaussian(sig=1.0, mean=0.0, cut=2.0)
+        rng = np.random.default_rng(1)
+        samples = g._sample(10_000, rng)
+        assert samples.shape == (10_000,)
+        assert np.all(np.abs(samples) <= 2.0 + 1e-12), \
+            "Truncated samples must lie within ±cut·sig of mean"
+
+    def test_truncated_rms_smaller_than_input_sig(self):
+        """At cut=2σ, the truncated distribution's rms < input σ."""
+        g = Gaussian(sig=1.0, mean=0.0, cut=2.0)
+        rng = np.random.default_rng(2)
+        samples = g._sample(50_000, rng)
+        actual_rms = samples.std()
+        assert 0.85 < actual_rms < 0.90, \
+            f"Expected truncated rms ≈ 0.879, got {actual_rms}"
+
+    def test_truncated_with_offset_mean(self):
+        g = Gaussian(sig=1.0, mean=10.0, cut=3.0)
+        rng = np.random.default_rng(3)
+        samples = g._sample(10_000, rng)
+        assert np.all((samples >= 7.0) & (samples <= 13.0))
+        assert abs(samples.mean() - 10.0) < 0.05
+
+    def test_reproducible_with_same_rng(self):
+        g = Gaussian(sig=1.0)
+        rng_a = np.random.default_rng(42)
+        rng_b = np.random.default_rng(42)
+        a = g._sample(1000, rng_a)
+        b = g._sample(1000, rng_b)
+        np.testing.assert_array_equal(a, b)

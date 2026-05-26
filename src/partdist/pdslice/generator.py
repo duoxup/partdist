@@ -50,6 +50,15 @@ class Gaussian:
         if self.cut is not None and self.cut <= 0:
             raise ValueError(f"Gaussian.cut must be > 0 if given, got {self.cut}")
 
+    def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        if self.cut is None:
+            return rng.normal(loc=self.mean, scale=self.sig, size=n)
+        from scipy.stats import truncnorm
+        a, b = -self.cut, self.cut
+        return truncnorm.rvs(
+            a, b, loc=self.mean, scale=self.sig, size=n, random_state=rng,
+        )
+
 
 @dataclass(frozen=True)
 class Uniform:
