@@ -97,6 +97,28 @@ class Plateau:
         if self.r <= 0:
             raise ValueError(f"Plateau.r must be > 0, got {self.r}")
 
+    def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        """Rejection-sample from the symmetric Fermi-Dirac plateau.
+
+        f(x) = 1 / (1 + exp(2·(2|x| - L) / r))   (unnormalised, peak = 1)
+        """
+        half_L = self.L / 2.0
+        r = self.r
+        window_half = half_L + 5.0 * r
+        out = np.empty(n, dtype=float)
+        filled = 0
+        oversample = max(1.0, 2.5 * window_half / self.L)
+        while filled < n:
+            trial_n = int((n - filled) * oversample) + 16
+            x_try = rng.uniform(-window_half, window_half, size=trial_n)
+            u = rng.uniform(0.0, 1.0, size=trial_n)
+            f_x = 1.0 / (1.0 + np.exp(2.0 * (2.0 * np.abs(x_try) - self.L) / r))
+            accepted = x_try[u <= f_x]
+            take = min(n - filled, len(accepted))
+            out[filled:filled + take] = accepted[:take]
+            filled += take
+        return out + self.mean
+
 
 @dataclass(frozen=True)
 class RadialUniform:

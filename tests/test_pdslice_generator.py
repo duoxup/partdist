@@ -134,3 +134,38 @@ class TestUniformSampling:
         assert abs(samples.mean()) < 0.01
         expected_sigma = 1.0 / (2.0 * math.sqrt(3.0))
         assert abs(samples.std() - expected_sigma) < 0.005
+
+
+class TestPlateauSampling:
+    def test_bounded_envelope(self):
+        """Samples must fall inside the rejection-sampling window."""
+        p = Plateau(L=1.0, r=0.1, mean=0.0)
+        rng = np.random.default_rng(0)
+        samples = p._sample(20_000, rng)
+        assert samples.shape == (20_000,)
+        bound = 0.5 + 5.0 * 0.1
+        assert np.all(np.abs(samples) <= bound + 1e-12)
+
+    def test_symmetric_about_mean(self):
+        p = Plateau(L=2.0, r=0.2, mean=3.0)
+        rng = np.random.default_rng(1)
+        samples = p._sample(50_000, rng)
+        assert abs(samples.mean() - 3.0) < 0.02
+
+    def test_sigma_in_expected_range(self):
+        """ASTRA: L/(2√3) ≤ σ ≤ L/2.8 for the plateau family."""
+        p = Plateau(L=1.0, r=0.1, mean=0.0)
+        rng = np.random.default_rng(2)
+        samples = p._sample(100_000, rng)
+        sigma = samples.std()
+        assert 1.0 / (2.0 * math.sqrt(3.0)) <= sigma <= 1.0 / 2.8 + 0.01, \
+            f"σ={sigma} outside ASTRA-stated bounds for plateau"
+
+    def test_approaches_uniform_for_sharp_edges(self):
+        """As r → 0, plateau should approach uniform σ = L/(2√3)."""
+        p = Plateau(L=1.0, r=1e-3, mean=0.0)
+        rng = np.random.default_rng(3)
+        samples = p._sample(50_000, rng)
+        sigma = samples.std()
+        uniform_sigma = 1.0 / (2.0 * math.sqrt(3.0))
+        assert abs(sigma - uniform_sigma) < 0.01
