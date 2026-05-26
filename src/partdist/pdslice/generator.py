@@ -85,7 +85,8 @@ class Plateau:
     PDF (symmetric):
         f(x) ∝ 1 / (1 + exp(2·(2|x - mean| - L) / r))
 
-    L is FWHM (half-max width); the actual support extends ~5·r beyond.
+    L is the full width at half maximum (i.e. f(±L/2) = f(0)/2); the actual
+    support extends ~5·r beyond ±L/2 due to the Fermi-Dirac tails.
     """
     L: float
     r: float
@@ -257,11 +258,14 @@ def make_slice(
     # ---- sampling ----
     rng = np.random.default_rng(seed)
 
+    # In every `else` branch below, the required-fill validation above
+    # guarantees the dispatched shape is non-None — mypy cannot follow that
+    # control flow, hence the `type: ignore[union-attr]` suppressions.
     if transverse is not None:
         x_arr, y_arr = transverse._sample2d(n, rng)
     else:
-        x_arr = x._sample(n, rng)   # type: ignore[union-attr]
-        y_arr = y._sample(n, rng)   # type: ignore[union-attr]
+        x_arr = x._sample(n, rng)   # type: ignore[union-attr]  # validated non-None above
+        y_arr = y._sample(n, rng)   # type: ignore[union-attr]  # validated non-None above
 
     if momentum is not None:
         px_arr, py_arr, pz_arr = momentum._sample3d(n, rng)
@@ -269,9 +273,9 @@ def make_slice(
         if transverse_momentum is not None:
             px_arr, py_arr = transverse_momentum._sample2d(n, rng)
         else:
-            px_arr = px._sample(n, rng)  # type: ignore[union-attr]
-            py_arr = py._sample(n, rng)  # type: ignore[union-attr]
-        pz_arr = pz._sample(n, rng)      # type: ignore[union-attr]
+            px_arr = px._sample(n, rng)  # type: ignore[union-attr]  # validated non-None above
+            py_arr = py._sample(n, rng)  # type: ignore[union-attr]  # validated non-None above
+        pz_arr = pz._sample(n, rng)      # type: ignore[union-attr]  # validated non-None above
 
     # ---- I_total → uniform lam ----
     from ..pd3d.utils import momentum_evc_to_velocity
