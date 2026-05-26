@@ -159,6 +159,19 @@ class Isotropic:
         if self.p_mag <= 0:
             raise ValueError(f"Isotropic.p_mag must be > 0, got {self.p_mag}")
 
+    def _sample3d(self, n: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Uniform on upper half-sphere |p|=p_mag, pz >= 0.
+
+        cos(θ) uniform on [0, 1] gives uniform area density on the half-sphere.
+        """
+        cos_th = rng.uniform(0.0, 1.0, size=n)
+        sin_th = np.sqrt(1.0 - cos_th ** 2)
+        phi = rng.uniform(0.0, 2.0 * np.pi, size=n)
+        px = self.p_mag * sin_th * np.cos(phi)
+        py = self.p_mag * sin_th * np.sin(phi)
+        pz = self.p_mag * cos_th
+        return px, py, pz
+
 
 # Type alias for independent-axis shapes (1D)
 _Axis1D = Union[Gaussian, Uniform, Plateau]

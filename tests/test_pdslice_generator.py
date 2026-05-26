@@ -190,3 +190,27 @@ class TestRadialUniformSampling:
         assert abs(b.std() - 1.0) < 0.02
         cov = np.mean(a * b) - a.mean() * b.mean()
         assert abs(cov) < 0.02
+
+
+class TestIsotropicSampling:
+    def test_on_sphere_with_forward_pz(self):
+        iso = Isotropic(p_mag=1e5)
+        rng = np.random.default_rng(0)
+        px, py, pz = iso._sample3d(20_000, rng)
+        assert px.shape == (20_000,)
+        mag = np.sqrt(px ** 2 + py ** 2 + pz ** 2)
+        np.testing.assert_allclose(mag, 1e5, rtol=1e-12)
+        assert np.all(pz >= -1e-12)
+
+    def test_statistics_match_half_sphere(self):
+        """ASTRA: <pz>=P/2, σ_px=σ_py=P/√3, σ_pz=P/(2√3)."""
+        P = 1e5
+        iso = Isotropic(p_mag=P)
+        rng = np.random.default_rng(1)
+        px, py, pz = iso._sample3d(100_000, rng)
+        assert abs(pz.mean() - P / 2.0) < 0.005 * P
+        assert abs(px.std() - P / math.sqrt(3.0)) < 0.005 * P
+        assert abs(py.std() - P / math.sqrt(3.0)) < 0.005 * P
+        assert abs(pz.std() - P / (2.0 * math.sqrt(3.0))) < 0.005 * P
+        assert abs(px.mean()) < 0.01 * P
+        assert abs(py.mean()) < 0.01 * P
