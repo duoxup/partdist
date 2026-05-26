@@ -175,3 +175,83 @@ class Isotropic:
 
 # Type alias for independent-axis shapes (1D)
 _Axis1D = Union[Gaussian, Uniform, Plateau]
+
+
+def make_slice(
+    n: int,
+    *,
+    I_total: float,
+    z: float = 0.0,
+    x: Optional[_Axis1D] = None,
+    y: Optional[_Axis1D] = None,
+    px: Optional[_Axis1D] = None,
+    py: Optional[_Axis1D] = None,
+    pz: Optional[_Axis1D] = None,
+    transverse: Optional[RadialUniform] = None,
+    transverse_momentum: Optional[RadialUniform] = None,
+    momentum: Optional[Isotropic] = None,
+    seed: Optional[int] = None,
+):
+    """Generate a SliceDistribution from per-axis shape primitives.
+
+    See module docstring for the design rationale and shape semantics.
+
+    Parameters
+    ----------
+    n : int
+        Number of macroparticles (>= 1).
+    I_total : float
+        Total current in Amperes; uniformly distributed to per-particle
+        line charge density ``lam_i = I_total / (<v_z> · n)``.
+    z : float
+        Longitudinal position of the slice [m].
+    x, y, px, py, pz : 1D-shape | None
+        Independent-axis shapes. Mutually exclusive with the corresponding
+        joint shape.
+    transverse : RadialUniform | None
+        Joint (x, y) shape. Excludes ``x`` and ``y``.
+    transverse_momentum : RadialUniform | None
+        Joint (px, py) shape. Excludes ``px`` and ``py``.
+    momentum : Isotropic | None
+        Joint (px, py, pz) shape. Excludes ``px``, ``py``, ``pz``,
+        and ``transverse_momentum``.
+    seed : int | None
+        Seed for the internal numpy Generator. None ⇒ non-deterministic.
+    """
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    if I_total <= 0:
+        raise ValueError(f"I_total must be > 0, got {I_total}")
+
+    if transverse is not None and (x is not None or y is not None):
+        raise ValueError(
+            "Cannot set 'transverse' together with 'x' or 'y'; "
+            "use the joint shape or independent shapes, not both."
+        )
+    if transverse_momentum is not None and (px is not None or py is not None):
+        raise ValueError(
+            "Cannot set 'transverse_momentum' together with 'px' or 'py'."
+        )
+    if momentum is not None and (
+        px is not None or py is not None or pz is not None
+        or transverse_momentum is not None
+    ):
+        raise ValueError(
+            "Cannot set 'momentum' together with any of 'px', 'py', 'pz', "
+            "or 'transverse_momentum'."
+        )
+
+    if transverse is None and (x is None or y is None):
+        raise ValueError(
+            "Must specify either 'transverse' or both 'x' and 'y'."
+        )
+    if momentum is None:
+        if transverse_momentum is None and (px is None or py is None):
+            raise ValueError(
+                "Must specify 'momentum', 'transverse_momentum', "
+                "or both 'px' and 'py'."
+            )
+        if pz is None:
+            raise ValueError("Must specify either 'momentum' or 'pz'.")
+
+    raise NotImplementedError("composition wired up in the next task")

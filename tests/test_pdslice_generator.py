@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from partdist.pdslice.generator import (
-    Gaussian, Uniform, Plateau, RadialUniform, Isotropic,
+    Gaussian, Uniform, Plateau, RadialUniform, Isotropic, make_slice,
 )
 
 
@@ -214,3 +214,62 @@ class TestIsotropicSampling:
         assert abs(pz.std() - P / (2.0 * math.sqrt(3.0))) < 0.005 * P
         assert abs(px.mean()) < 0.01 * P
         assert abs(py.mean()) < 0.01 * P
+
+
+class TestMakeSliceValidation:
+    GAUSS = Gaussian(sig=1e-4)
+    GAUSS_PZ = Gaussian(sig=1e3, mean=5e5)
+
+    def test_rejects_zero_n(self):
+        with pytest.raises(ValueError, match="n"):
+            make_slice(0, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_rejects_nonpositive_I_total(self):
+        with pytest.raises(ValueError, match="I_total"):
+            make_slice(100, I_total=0.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+        with pytest.raises(ValueError, match="I_total"):
+            make_slice(100, I_total=-1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_transverse_conflicts_with_x_or_y(self):
+        ru = RadialUniform(R=1e-3)
+        with pytest.raises(ValueError, match="transverse"):
+            make_slice(100, I_total=1.0, transverse=ru,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_transverse_momentum_conflicts_with_px_or_py(self):
+        ru = RadialUniform(R=1e3)
+        with pytest.raises(ValueError, match="transverse_momentum"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       transverse_momentum=ru, px=self.GAUSS,
+                       py=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_momentum_conflicts_with_px_py_pz_or_transverse_momentum(self):
+        iso = Isotropic(p_mag=5e5)
+        with pytest.raises(ValueError, match="momentum"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       momentum=iso, pz=self.GAUSS_PZ)
+
+    def test_missing_transverse_position(self):
+        with pytest.raises(ValueError, match="x.*y|transverse"):
+            make_slice(100, I_total=1.0,
+                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_missing_transverse_momentum(self):
+        with pytest.raises(ValueError, match="px.*py|transverse_momentum|momentum"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS, pz=self.GAUSS_PZ)
+
+    def test_missing_pz(self):
+        with pytest.raises(ValueError, match="pz|momentum"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS)
