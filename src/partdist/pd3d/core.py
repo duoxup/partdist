@@ -821,7 +821,7 @@ class ParticleDistribution3D:
     def _calc_current_flux_z_abs(self) -> np.ndarray:
         return np.abs(self.current_flux_z)
 
-    def momentum_si(self, *, m0: float = g_m0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def momentum_si(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         factor = abs(g_e0) / g_c  # eV/c -> kg·m/s
         px_data = self._quantities["px"].data
         py_data = self._quantities["py"].data
@@ -831,8 +831,6 @@ class ParticleDistribution3D:
     def momentum_evc(
         self,
         *,
-        m0: float = g_m0,
-        e0: float = g_e0,
         copy: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (px, py, pz) in eV/c.
