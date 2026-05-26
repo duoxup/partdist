@@ -447,3 +447,22 @@ class TestMakeSliceIntegration:
         assert d.n == n
         pz = d.get_data("pz")
         assert np.all(np.abs(pz - 5e5) <= 2.0 * 1e3 + 1e-9)
+
+
+class TestPublicAPI:
+    def test_imports_from_pdslice_package(self):
+        from partdist.pdslice import (
+            make_slice,
+            Gaussian, Uniform, Plateau, RadialUniform, Isotropic,
+        )
+        assert callable(make_slice)
+        assert Gaussian(sig=1.0) is not None
+
+    def test_not_re_exported_at_top_level(self):
+        """Per top-level-surface policy: container-specific generators
+        stay in their submodule."""
+        import partdist
+        assert not hasattr(partdist, "make_slice"), \
+            "make_slice should NOT be re-exported at partdist top level"
+        assert not hasattr(partdist, "Gaussian"), \
+            "shape classes should NOT be re-exported at partdist top level"
