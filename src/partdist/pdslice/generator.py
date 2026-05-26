@@ -133,6 +133,16 @@ class RadialUniform:
         if self.R <= 0:
             raise ValueError(f"RadialUniform.R must be > 0, got {self.R}")
 
+    def _sample2d(self, n: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
+        """Uniform on disk: r = R·√U, θ = 2πU₂ gives uniform area density."""
+        u1 = rng.uniform(0.0, 1.0, size=n)
+        u2 = rng.uniform(0.0, 1.0, size=n)
+        radius = self.R * np.sqrt(u1)
+        theta = 2.0 * np.pi * u2
+        a = radius * np.cos(theta)
+        b = radius * np.sin(theta)
+        return a, b
+
 
 @dataclass(frozen=True)
 class Isotropic:

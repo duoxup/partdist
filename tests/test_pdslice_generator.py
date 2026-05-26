@@ -169,3 +169,24 @@ class TestPlateauSampling:
         sigma = samples.std()
         uniform_sigma = 1.0 / (2.0 * math.sqrt(3.0))
         assert abs(sigma - uniform_sigma) < 0.01
+
+
+class TestRadialUniformSampling:
+    def test_inside_disk(self):
+        ru = RadialUniform(R=1.0)
+        rng = np.random.default_rng(0)
+        a, b = ru._sample2d(10_000, rng)
+        assert a.shape == (10_000,)
+        assert b.shape == (10_000,)
+        radii = np.sqrt(a * a + b * b)
+        assert np.all(radii <= 1.0 + 1e-12)
+
+    def test_uniform_density_on_disk(self):
+        """For a uniformly-filled disk of radius R, σ_x = σ_y = R/2."""
+        ru = RadialUniform(R=2.0)
+        rng = np.random.default_rng(1)
+        a, b = ru._sample2d(50_000, rng)
+        assert abs(a.std() - 1.0) < 0.02
+        assert abs(b.std() - 1.0) < 0.02
+        cov = np.mean(a * b) - a.mean() * b.mean()
+        assert abs(cov) < 0.02
