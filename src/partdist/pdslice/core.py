@@ -9,7 +9,7 @@ from the base columns and cached where the cost matters.
 
 Designed as a sibling of :class:`partdist.ParticleDistribution3D`; same
 derived-quantity machinery, same Twiss diagnostics via
-:func:`partdist.pd3d.analysis.compute_twiss_plane`. CST Particle Studio
+:func:`partdist.pd3d.analysis.compute_phase_space_plane`. CST Particle Studio
 ``.pid`` emission files are the canonical input format
 (:func:`partdist.read_cst_pid_distribution`).
 """
@@ -27,7 +27,7 @@ from ..particle_array_quantity import (
     QuantityCategory,
     QuantityDTypeKind,
 )
-from ..pd3d.analysis import compute_twiss_plane
+from ..pd3d.analysis import compute_phase_space_plane
 
 from .._array_helpers import as_1d_float_array as _as_1d_float_array
 
@@ -769,32 +769,32 @@ class SliceDistribution:
     @property
     def alpha_x(self) -> float:
         """Twiss alpha in x."""
-        return compute_twiss_plane(self, plane="x", weight="lam_abs").alpha
+        return compute_phase_space_plane(self, plane="x", weight="lam_abs").alpha
 
     @property
     def beta_x(self) -> float:
         """Twiss beta in x [m]."""
-        return compute_twiss_plane(self, plane="x", weight="lam_abs").beta
+        return compute_phase_space_plane(self, plane="x", weight="lam_abs").beta
 
     @property
     def gamma_x(self) -> float:
         """Twiss gamma in x [1/m]."""
-        return compute_twiss_plane(self, plane="x", weight="lam_abs").gamma_twiss
+        return compute_phase_space_plane(self, plane="x", weight="lam_abs").gamma_twiss
 
     @property
     def alpha_y(self) -> float:
         """Twiss alpha in y."""
-        return compute_twiss_plane(self, plane="y", weight="lam_abs").alpha
+        return compute_phase_space_plane(self, plane="y", weight="lam_abs").alpha
 
     @property
     def beta_y(self) -> float:
         """Twiss beta in y [m]."""
-        return compute_twiss_plane(self, plane="y", weight="lam_abs").beta
+        return compute_phase_space_plane(self, plane="y", weight="lam_abs").beta
 
     @property
     def gamma_y(self) -> float:
         """Twiss gamma in y [1/m]."""
-        return compute_twiss_plane(self, plane="y", weight="lam_abs").gamma_twiss
+        return compute_phase_space_plane(self, plane="y", weight="lam_abs").gamma_twiss
 
     @property
     def twiss(self) -> Dict[str, float]:

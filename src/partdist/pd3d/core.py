@@ -20,7 +20,7 @@ from ..particle_array_quantity import (
     QuantityDTypeKind,
 )
 
-from .analysis import compute_twiss_plane, current_profile_z
+from .analysis import compute_phase_space_plane, current_profile_z
 from .._array_helpers import as_1d_array as _as_1d_array
 from .._array_helpers import as_1d_float_array as _as_1d_float_array
 
@@ -930,32 +930,32 @@ class ParticleDistribution3D:
     @property
     def alpha_x(self) -> float:
         # return float(-self.covariance('x', 'xp') / self.emit_x)
-        return compute_twiss_plane(self, plane='x', weight='Q_abs').alpha
+        return compute_phase_space_plane(self, plane='x', weight='Q_abs').alpha
     
     @property
     def beta_x(self) -> float:
         # return float(self.var('x') / self.emit_x)
-        return compute_twiss_plane(self, plane='x', weight='Q_abs').beta
+        return compute_phase_space_plane(self, plane='x', weight='Q_abs').beta
     
     @property
     def gamma_x(self) -> float:
         # return float(self.var('xp') / self.emit_x)
-        return compute_twiss_plane(self, plane='x', weight='Q_abs').gamma_twiss
+        return compute_phase_space_plane(self, plane='x', weight='Q_abs').gamma_twiss
     
     @property
     def alpha_y(self) -> float:
         # return float(-self.covariance('y', 'yp') / self.emit_y)
-        return compute_twiss_plane(self, plane='y', weight='Q_abs').alpha
+        return compute_phase_space_plane(self, plane='y', weight='Q_abs').alpha
     
     @property
     def beta_y(self) -> float:
         # return float(self.var('y') / self.emit_y)
-        return compute_twiss_plane(self, plane='y', weight='Q_abs').beta
+        return compute_phase_space_plane(self, plane='y', weight='Q_abs').beta
     
     @property
     def gamma_y(self) -> float:
         # return float(self.var('yp') / self.emit_y)
-        return compute_twiss_plane(self, plane='y', weight='Q_abs').gamma_twiss
+        return compute_phase_space_plane(self, plane='y', weight='Q_abs').gamma_twiss
     
     @property
     def twiss(self) -> Dict[str, float]:

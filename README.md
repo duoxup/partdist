@@ -132,7 +132,7 @@ pa_back = to_ocelot_particle_array(dist)
 
 ```python
 from partdist.pd3d.manipulator import match_twiss_xy
-from partdist.pd3d.analysis import compute_twiss_plane
+from partdist.pd3d.analysis import compute_phase_space_plane
 
 dist_matched = match_twiss_xy(
     dist,
@@ -145,14 +145,14 @@ dist_matched = match_twiss_xy(
     preserve_centroid=True,
 )
 
-twiss_x = compute_twiss_plane(dist_matched, plane="x", weight="Q_abs")
-twiss_y = compute_twiss_plane(dist_matched, plane="y", weight="Q_abs")
+twiss_x = compute_phase_space_plane(dist_matched, plane="x", weight="Q_abs")
+twiss_y = compute_phase_space_plane(dist_matched, plane="y", weight="Q_abs")
 
 print(f"alpha_x = {twiss_x.alpha:.3f}, beta_x = {twiss_x.beta:.3f} m, eps_geom = {twiss_x.geometric_emittance:.3e} m")
 print(f"alpha_y = {twiss_y.alpha:.3f}, beta_y = {twiss_y.beta:.3f} m, eps_geom = {twiss_y.geometric_emittance:.3e} m")
 ```
 
-The package standardises on the geometric divergence `x' = px/pz`, `y' = py/pz` (the textbook accelerator-physics convention); both `ParticleDistribution3D.emit_x/y` and `compute_twiss_plane(...).geometric_emittance` use this definition.
+The package standardises on the geometric divergence `x' = px/pz`, `y' = py/pz` (the textbook accelerator-physics convention); both `ParticleDistribution3D.emit_x/y` and `compute_phase_space_plane(...).geometric_emittance` use this definition.
 
 ### Longitudinal Manipulation
 
@@ -194,7 +194,7 @@ dist_chirped = set_linear_chirp(
 ### Analysis and Visualization
 
 ```python
-from partdist.pd3d.analysis import current_profile_z, compute_twiss_plane, analyze_longitudinal_trend
+from partdist.pd3d.analysis import current_profile_z, compute_phase_space_plane, analyze_longitudinal_trend
 from partdist.pd3d.viz import hist2d_pd3d
 import matplotlib.pyplot as plt
 
@@ -218,7 +218,7 @@ ax.set_ylabel("pz [eV/c]")
 ax.set_title("Phase Space Distribution")
 
 # Twiss
-twiss = compute_twiss_plane(dist, plane="x", weight="Q_abs")
+twiss = compute_phase_space_plane(dist, plane="x", weight="Q_abs")
 print(f"eps_geom = {twiss.geometric_emittance:.3e} m, alpha_x = {twiss.alpha:.3f}, beta_x = {twiss.beta:.3f} m")
 
 # pz(z) trend + residuals as a single dataclass result
@@ -262,7 +262,7 @@ Plus a larger set of helpers (centering, masking, slicing, core-region extractio
 
 ### Analysis (in `partdist.pd3d.analysis`)
 
-- `compute_phase_space_plane()` / `compute_twiss_plane()` — full Twiss + geometric/normalised emittance for one plane
+- `compute_phase_space_plane()` — full Twiss + geometric/normalised emittance for one plane (and `compute_phase_space_covariance_plane()` for just the 2×2 covariance matrix)
 - `current_profile_z()` — longitudinal current profile via charge-weighted histogram
 - `compute_binned_profile()`, `fit_trend_from_profile()`, `evaluate_residuals()` — binned-statistic pipeline
 - `analyze_longitudinal_trend()` — convenience wrapper: returns `AnalyzeLongitudinalTrendResult` bundling profile + trend + residuals

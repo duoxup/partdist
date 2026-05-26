@@ -20,8 +20,6 @@ from .core import ParticleDistribution
 from .analysis import (TrendFitResult,
                        fit_trend,
                        fit_linear_chirp,
-                       # compute_twiss_plane,
-                       # compute_phase_space_plane,
                        )
 from .utils import (
     _as_1d_array,
