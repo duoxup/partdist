@@ -117,3 +117,20 @@ class TestGaussianSampling:
         a = g._sample(1000, rng_a)
         b = g._sample(1000, rng_b)
         np.testing.assert_array_equal(a, b)
+
+
+class TestUniformSampling:
+    def test_bounds(self):
+        u = Uniform(L=2.0, mean=10.0)
+        rng = np.random.default_rng(0)
+        samples = u._sample(10_000, rng)
+        assert samples.shape == (10_000,)
+        assert np.all((samples >= 9.0) & (samples <= 11.0))
+
+    def test_stats_match_uniform(self):
+        u = Uniform(L=1.0, mean=0.0)
+        rng = np.random.default_rng(1)
+        samples = u._sample(50_000, rng)
+        assert abs(samples.mean()) < 0.01
+        expected_sigma = 1.0 / (2.0 * math.sqrt(3.0))
+        assert abs(samples.std() - expected_sigma) < 0.005

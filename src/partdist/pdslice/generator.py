@@ -73,6 +73,10 @@ class Uniform:
         if self.L <= 0:
             raise ValueError(f"Uniform.L must be > 0, got {self.L}")
 
+    def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        half = self.L / 2.0
+        return rng.uniform(low=self.mean - half, high=self.mean + half, size=n)
+
 
 @dataclass(frozen=True)
 class Plateau:
