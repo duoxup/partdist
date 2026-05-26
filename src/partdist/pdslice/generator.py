@@ -254,4 +254,46 @@ def make_slice(
         if pz is None:
             raise ValueError("Must specify either 'momentum' or 'pz'.")
 
-    raise NotImplementedError("composition wired up in the next task")
+    # ---- sampling ----
+    rng = np.random.default_rng(seed)
+
+    if transverse is not None:
+        x_arr, y_arr = transverse._sample2d(n, rng)
+    else:
+        x_arr = x._sample(n, rng)   # type: ignore[union-attr]
+        y_arr = y._sample(n, rng)   # type: ignore[union-attr]
+
+    if momentum is not None:
+        px_arr, py_arr, pz_arr = momentum._sample3d(n, rng)
+    else:
+        if transverse_momentum is not None:
+            px_arr, py_arr = transverse_momentum._sample2d(n, rng)
+        else:
+            px_arr = px._sample(n, rng)  # type: ignore[union-attr]
+            py_arr = py._sample(n, rng)  # type: ignore[union-attr]
+        pz_arr = pz._sample(n, rng)      # type: ignore[union-attr]
+
+    # ---- I_total → uniform lam ----
+    from ..pd3d.utils import momentum_evc_to_velocity
+    _vx, _vy, vz = momentum_evc_to_velocity(px_arr, py_arr, pz_arr)
+    mean_vz = float(np.mean(vz))
+    if mean_vz <= 0:
+        raise ValueError(
+            f"Mean longitudinal velocity <v_z>={mean_vz} m/s is not positive; "
+            f"cannot convert I_total to per-particle lam. Ensure the pz "
+            f"shape produces a forward-moving beam (positive mean pz)."
+        )
+    lam_per_particle = I_total / (mean_vz * n)
+    lam_arr = np.full(n, lam_per_particle, dtype=float)
+
+    # All particles emitted simultaneously
+    t_arr = np.zeros(n, dtype=float)
+
+    # Local import to avoid a top-level circular dep risk
+    from .core import SliceDistribution
+    return SliceDistribution(
+        z=z,
+        x=x_arr, y=y_arr,
+        px=px_arr, py=py_arr, pz=pz_arr,
+        t=t_arr, lam=lam_arr,
+    )

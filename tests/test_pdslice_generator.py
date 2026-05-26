@@ -8,6 +8,7 @@ import pytest
 from partdist.pdslice.generator import (
     Gaussian, Uniform, Plateau, RadialUniform, Isotropic, make_slice,
 )
+from partdist import SliceDistribution
 
 
 class TestShapeConstruction:
@@ -273,3 +274,69 @@ class TestMakeSliceValidation:
             make_slice(100, I_total=1.0,
                        x=self.GAUSS, y=self.GAUSS,
                        px=self.GAUSS, py=self.GAUSS)
+
+
+class TestMakeSliceSmoke:
+    def test_returns_slice_distribution_with_correct_size(self):
+        d = make_slice(
+            1000,
+            I_total=1e-3,
+            z=0.5,
+            x=Gaussian(sig=1e-4),
+            y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3),
+            py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=0,
+        )
+        assert isinstance(d, SliceDistribution)
+        assert d.n == 1000
+        assert d._z0 == 0.5
+
+    def test_lam_uniform_and_matches_I_total(self):
+        """For uniform lam_i and a forward-moving beam:
+            I_total = Σ lam_i · v_z_i ≈ n · lam · <v_z>
+        With uniform lam this is an exact identity."""
+        n = 5000
+        I_total = 1.234e-3
+        d = make_slice(
+            n,
+            I_total=I_total,
+            x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=0,
+        )
+        lam = d.get_data("lam")
+        assert np.allclose(lam, lam[0])
+        from partdist.pd3d.utils import momentum_evc_to_velocity
+        _vx, _vy, vz = momentum_evc_to_velocity(
+            d.get_data("px"), d.get_data("py"), d.get_data("pz")
+        )
+        I_reconstructed = float(np.sum(lam * vz))
+        assert abs(I_reconstructed - I_total) / I_total < 1e-12
+
+    def test_seed_makes_output_reproducible(self):
+        kwargs = dict(
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3, mean=5e5),
+            seed=7,
+        )
+        a = make_slice(500, **kwargs)
+        b = make_slice(500, **kwargs)
+        np.testing.assert_array_equal(a.get_data("x"), b.get_data("x"))
+        np.testing.assert_array_equal(a.get_data("pz"), b.get_data("pz"))
+
+    def test_rejects_zero_mean_pz(self):
+        """If <v_z><=0 (beam at rest or moving backward in z), lam blows up — must error."""
+        with pytest.raises(ValueError, match="v_z|velocity"):
+            make_slice(
+                100,
+                I_total=1e-3,
+                x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+                px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
+                pz=Gaussian(sig=1e3, mean=-5e5),  # Negative mean ensures backward motion
+                seed=0,
+            )
