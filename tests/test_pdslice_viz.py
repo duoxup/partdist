@@ -40,3 +40,49 @@ class TestModuleImports:
             _check_z_not_axis("x", "z")
         # non-z names pass:
         _check_z_not_axis("x", "y", "px")
+
+
+class TestScatterPdslice:
+    def test_returns_fig_ax_artist(self):
+        from partdist.pdslice.viz import scatter_pdslice
+        d = gauss_slice()
+        fig, ax, artist = scatter_pdslice(d, x="x", y="px")
+        assert isinstance(fig, Figure)
+        assert isinstance(ax, Axes)
+        assert isinstance(artist, PathCollection)
+        plt.close(fig)
+
+    def test_default_c_is_lam_abs(self):
+        """Without explicit c, the artist must have a color array (lam_abs)
+        and the figure must have a colorbar axis."""
+        from partdist.pdslice.viz import scatter_pdslice
+        d = gauss_slice()
+        fig, ax, artist = scatter_pdslice(d, x="x", y="px")
+        # color path engaged: scatter sets get_array() when c= is given
+        assert artist.get_array() is not None, \
+            "c=None default would yield no per-point color array"
+        # colorbar auto-added as a second Axes on the figure
+        assert len(fig.axes) >= 2, "expected colorbar axes when c is set"
+        plt.close(fig)
+
+    def test_explicit_c_overrides_default(self):
+        from partdist.pdslice.viz import scatter_pdslice
+        d = gauss_slice()
+        fig, ax, artist = scatter_pdslice(d, x="x", y="px", c="pz")
+        cb_ax = [a for a in fig.axes if a is not ax][0]
+        # colorbar label should reference pz (latex contains 'p_z')
+        label = cb_ax.get_ylabel() or cb_ax.get_xlabel()
+        assert "p_z" in label or "pz" in label
+        plt.close(fig)
+
+    def test_rejects_x_z(self):
+        from partdist.pdslice.viz import scatter_pdslice
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="scalar z"):
+            scatter_pdslice(d, x="z", y="px")
+
+    def test_rejects_y_z(self):
+        from partdist.pdslice.viz import scatter_pdslice
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="scalar z"):
+            scatter_pdslice(d, x="x", y="z")
