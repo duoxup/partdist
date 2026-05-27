@@ -513,3 +513,139 @@ def scale_rms_y(
         py[m] /= factor
         out.update_quantity("py", py)
     return out
+
+
+def set_emittance_x(
+    dist: SliceDistribution,
+    eps_target: float,
+    *,
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    preserve_centroid: bool = True,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Scale x and px isotropically so the x-plane geometric emittance
+    equals ``eps_target``. Preserves α and β by construction.
+
+    Both x and px are multiplied by k = sqrt(eps_target / eps_current),
+    which scales the phase-space ellipse uniformly: σ_x → k·σ_x,
+    σ_x' → k·σ_x', so ε → k²·ε while α and β are unchanged.
+    """
+    if eps_target <= 0.0:
+        raise ValueError(f"eps_target must be > 0, got {eps_target}.")
+
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    w = _get_weight_array(out, weight, absolute=True)
+    m = _normalize_mask(mask, n)
+
+    u = _extract_data(out, "x", n_expected=n, dtype=float, name="x")
+    pu = _extract_data(out, "px", n_expected=n, dtype=float, name="px")
+    pz = _extract_data(out, "pz", n_expected=n, dtype=float, name="pz")
+
+    valid = (
+        m
+        & np.isfinite(u)
+        & np.isfinite(pu)
+        & np.isfinite(pz)
+        & np.isfinite(w)
+        & (np.abs(pz) > 0.0)
+    )
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid selected particles are required for emittance scaling.")
+    if float(np.sum(w[valid])) <= 0.0:
+        raise ValueError("Selected particles must have strictly positive total weight.")
+
+    up = pu / pz
+    u_sel, up_sel, pz_sel, w_sel = u[valid], up[valid], pz[valid], w[valid]
+
+    _alpha, _beta, eps_old, mean_u, mean_up = (
+        _weighted_centered_twiss_from_arrays(u_sel, up_sel, w_sel)
+    )
+    if eps_old <= 0.0:
+        raise ValueError("Current emittance is non-positive, cannot rescale.")
+
+    factor = float(np.sqrt(eps_target / eps_old))
+
+    if preserve_centroid:
+        u_new_sel = mean_u + factor * (u_sel - mean_u)
+        up_new_sel = mean_up + factor * (up_sel - mean_up)
+    else:
+        u_new_sel = factor * u_sel
+        up_new_sel = factor * up_sel
+
+    u_new = u.copy()
+    pu_new = pu.copy()
+    u_new[valid] = u_new_sel
+    pu_new[valid] = up_new_sel * pz_sel
+
+    out.update_quantity("x", u_new)
+    out.update_quantity("px", pu_new)
+    return out
+
+
+def set_emittance_y(
+    dist: SliceDistribution,
+    eps_target: float,
+    *,
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    preserve_centroid: bool = True,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Scale y and py isotropically so the y-plane geometric emittance
+    equals ``eps_target``. Preserves α and β by construction.
+
+    Symmetric to :func:`set_emittance_x`.
+    """
+    if eps_target <= 0.0:
+        raise ValueError(f"eps_target must be > 0, got {eps_target}.")
+
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    w = _get_weight_array(out, weight, absolute=True)
+    m = _normalize_mask(mask, n)
+
+    u = _extract_data(out, "y", n_expected=n, dtype=float, name="y")
+    pu = _extract_data(out, "py", n_expected=n, dtype=float, name="py")
+    pz = _extract_data(out, "pz", n_expected=n, dtype=float, name="pz")
+
+    valid = (
+        m
+        & np.isfinite(u)
+        & np.isfinite(pu)
+        & np.isfinite(pz)
+        & np.isfinite(w)
+        & (np.abs(pz) > 0.0)
+    )
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid selected particles are required for emittance scaling.")
+    if float(np.sum(w[valid])) <= 0.0:
+        raise ValueError("Selected particles must have strictly positive total weight.")
+
+    up = pu / pz
+    u_sel, up_sel, pz_sel, w_sel = u[valid], up[valid], pz[valid], w[valid]
+
+    _alpha, _beta, eps_old, mean_u, mean_up = (
+        _weighted_centered_twiss_from_arrays(u_sel, up_sel, w_sel)
+    )
+    if eps_old <= 0.0:
+        raise ValueError("Current emittance is non-positive, cannot rescale.")
+
+    factor = float(np.sqrt(eps_target / eps_old))
+
+    if preserve_centroid:
+        u_new_sel = mean_u + factor * (u_sel - mean_u)
+        up_new_sel = mean_up + factor * (up_sel - mean_up)
+    else:
+        u_new_sel = factor * u_sel
+        up_new_sel = factor * up_sel
+
+    u_new = u.copy()
+    pu_new = pu.copy()
+    u_new[valid] = u_new_sel
+    pu_new[valid] = up_new_sel * pz_sel
+
+    out.update_quantity("y", u_new)
+    out.update_quantity("py", pu_new)
+    return out

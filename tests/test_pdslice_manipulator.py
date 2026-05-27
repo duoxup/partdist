@@ -354,6 +354,84 @@ class TestScaleRMSY:
             scale_rms_y(d, factor=-1.0)
 
 
+from partdist.pdslice.manipulator import set_emittance_x, set_emittance_y
+
+
+class TestSetEmittanceX:
+    def test_recovers_target_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="x", weight="lam_abs").geometric_emittance
+        target = 2.5 * eps_before
+        out = set_emittance_x(d, eps_target=target)
+        eps_after = compute_phase_space_plane(out, plane="x", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - target) / target < 1e-12
+
+    def test_alpha_beta_preserved(self):
+        d = gauss_slice(n=20_000)
+        r_before = compute_phase_space_plane(d, plane="x", weight="lam_abs")
+        out = set_emittance_x(d, eps_target=0.4 * r_before.geometric_emittance)
+        r_after = compute_phase_space_plane(out, plane="x", weight="lam_abs")
+        assert abs(r_after.alpha - r_before.alpha) < 1e-10
+        assert abs(r_after.beta - r_before.beta) / r_before.beta < 1e-12
+
+    def test_y_plane_unaffected(self):
+        d = gauss_slice()
+        y_before = d.get_data("y").copy()
+        py_before = d.get_data("py").copy()
+        eps_before = compute_phase_space_plane(d, plane="x", weight="lam_abs").geometric_emittance
+        out = set_emittance_x(d, eps_target=1.5 * eps_before)
+        np.testing.assert_array_equal(out.get_data("y"), y_before)
+        np.testing.assert_array_equal(out.get_data("py"), py_before)
+
+    def test_preserve_centroid_default(self):
+        """Centroids are preserved in Twiss-canonical (u, u'=pu/pz) space."""
+        d = shift_centroid(gauss_slice(), dx=1e-3, dpx=100.0)
+        r_before = compute_phase_space_plane(d, plane="x", weight="lam_abs")
+        out = set_emittance_x(d, eps_target=2.0 * r_before.geometric_emittance)
+        r_after = compute_phase_space_plane(out, plane="x", weight="lam_abs")
+        assert abs(r_after.mean_u - r_before.mean_u) < 1e-12
+        assert abs(r_after.mean_up - r_before.mean_up) < 1e-12
+
+    def test_rejects_nonpositive_target(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="eps_target"):
+            set_emittance_x(d, eps_target=0.0)
+        with pytest.raises(ValueError, match="eps_target"):
+            set_emittance_x(d, eps_target=-1e-7)
+
+
+class TestSetEmittanceY:
+    def test_recovers_target_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="y", weight="lam_abs").geometric_emittance
+        target = 2.5 * eps_before
+        out = set_emittance_y(d, eps_target=target)
+        eps_after = compute_phase_space_plane(out, plane="y", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - target) / target < 1e-12
+
+    def test_alpha_beta_preserved(self):
+        d = gauss_slice(n=20_000)
+        r_before = compute_phase_space_plane(d, plane="y", weight="lam_abs")
+        out = set_emittance_y(d, eps_target=0.4 * r_before.geometric_emittance)
+        r_after = compute_phase_space_plane(out, plane="y", weight="lam_abs")
+        assert abs(r_after.alpha - r_before.alpha) < 1e-10
+        assert abs(r_after.beta - r_before.beta) / r_before.beta < 1e-12
+
+    def test_x_plane_unaffected(self):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        px_before = d.get_data("px").copy()
+        eps_before = compute_phase_space_plane(d, plane="y", weight="lam_abs").geometric_emittance
+        out = set_emittance_y(d, eps_target=1.5 * eps_before)
+        np.testing.assert_array_equal(out.get_data("x"), x_before)
+        np.testing.assert_array_equal(out.get_data("px"), px_before)
+
+    def test_rejects_nonpositive_target(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="eps_target"):
+            set_emittance_y(d, eps_target=0.0)
+
+
 class TestSharedBehaviour:
     @pytest.mark.parametrize("op", [
         lambda d, **kw: match_twiss_x(d, alpha=1.0, beta=3.0, **kw),
@@ -424,12 +502,14 @@ class TestPackageReexports:
             match_twiss_x, match_twiss_y, match_twiss_xy,
             apply_dispersion, rotate_xy,
             scale_rms_x, scale_rms_y,
+            set_emittance_x, set_emittance_y,
         )
         assert all(callable(f) for f in (
             shift_centroid, center_beam,
             match_twiss_x, match_twiss_y, match_twiss_xy,
             apply_dispersion, rotate_xy,
             scale_rms_x, scale_rms_y,
+            set_emittance_x, set_emittance_y,
         ))
 
     def test_not_re_exported_at_top_level(self):
@@ -439,6 +519,7 @@ class TestPackageReexports:
             "match_twiss_x", "match_twiss_y", "match_twiss_xy",
             "apply_dispersion", "rotate_xy",
             "scale_rms_x", "scale_rms_y",
+            "set_emittance_x", "set_emittance_y",
         ):
             assert not hasattr(partdist, name), (
                 f"{name} should NOT be re-exported at partdist top level"

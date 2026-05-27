@@ -17,6 +17,8 @@ from .manipulator import (
     rotate_xy,
     scale_rms_x,
     scale_rms_y,
+    set_emittance_x,
+    set_emittance_y,
 )
 from . import viz
 
@@ -37,4 +39,6 @@ __all__ = [
     "rotate_xy",
     "scale_rms_x",
     "scale_rms_y",
+    "set_emittance_x",
+    "set_emittance_y",
 ]
