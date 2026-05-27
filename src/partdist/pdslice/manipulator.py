@@ -468,3 +468,50 @@ def scale_rms_x(
         px[m] /= factor
         out.update_quantity("px", px)
     return out
+
+
+def scale_rms_y(
+    dist: SliceDistribution,
+    *,
+    factor: float,
+    emittance_preserving: bool = True,
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Scale y by `factor` (and py by 1/factor if emittance-preserving).
+
+    Parameters
+    ----------
+    dist : SliceDistribution
+        Input distribution.
+    factor : float
+        Scale factor for y (must be positive).
+    emittance_preserving : bool
+        If True (default), also scale py by 1/factor to preserve geometric
+        emittance. If False, py is left unchanged.
+    mask : array-like of bool or None
+        Boolean mask selecting particles to transform.  Unmasked particles
+        are left unchanged.
+    inplace : bool
+        Modify ``dist`` in place when True.  Returns the modified
+        distribution either way.
+
+    Returns
+    -------
+    SliceDistribution
+        Distribution with y (and optionally py) updated.
+        x, px, pz, and all other quantities are unchanged.
+    """
+    if factor <= 0.0:
+        raise ValueError(f"factor must be > 0, got {factor}.")
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    y = out.get_data("y").copy()
+    y[m] *= factor
+    out.update_quantity("y", y)
+    if emittance_preserving:
+        py = out.get_data("py").copy()
+        py[m] /= factor
+        out.update_quantity("py", py)
+    return out

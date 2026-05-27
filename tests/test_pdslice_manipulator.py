@@ -312,3 +312,27 @@ class TestScaleRMSX:
             scale_rms_x(d, factor=0.0)
         with pytest.raises(ValueError, match="factor"):
             scale_rms_x(d, factor=-1.0)
+
+
+from partdist.pdslice.manipulator import scale_rms_y
+
+
+class TestScaleRMSY:
+    def test_factor_doubles_sigma_y(self):
+        d = gauss_slice(n=20_000)
+        sy_before = d.get_data("y").std()
+        out = scale_rms_y(d, factor=2.0)
+        assert abs(out.get_data("y").std() - 2.0 * sy_before) < 1e-10
+
+    def test_x_plane_unaffected(self):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        px_before = d.get_data("px").copy()
+        out = scale_rms_y(d, factor=1.5)
+        np.testing.assert_array_equal(out.get_data("x"), x_before)
+        np.testing.assert_array_equal(out.get_data("px"), px_before)
+
+    def test_rejects_nonpositive_factor(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="factor"):
+            scale_rms_y(d, factor=0.0)
