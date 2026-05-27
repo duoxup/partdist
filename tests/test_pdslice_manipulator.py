@@ -182,3 +182,23 @@ class TestMatchTwissX:
             match_twiss_x(d, alpha=1.0, beta=0.0)
         with pytest.raises(ValueError, match="beta"):
             match_twiss_x(d, alpha=1.0, beta=-1.0)
+
+
+from partdist.pdslice.manipulator import match_twiss_y
+
+
+class TestMatchTwissY:
+    def test_recovers_target_alpha_beta(self):
+        d = gauss_slice()
+        out = match_twiss_y(d, alpha=1.0, beta=4.0)
+        result = compute_phase_space_plane(out, plane="y", weight="lam_abs")
+        assert abs(result.alpha - 1.0) < 1e-10
+        assert abs(result.beta - 4.0) < 1e-10
+
+    def test_x_plane_unaffected(self):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        px_before = d.get_data("px").copy()
+        out = match_twiss_y(d, alpha=1.0, beta=4.0)
+        np.testing.assert_array_equal(out.get_data("x"), x_before)
+        np.testing.assert_array_equal(out.get_data("px"), px_before)
