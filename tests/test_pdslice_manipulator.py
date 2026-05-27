@@ -29,7 +29,7 @@ class TestModuleImports:
         assert manipulator is not None
 
 
-from partdist.pdslice.manipulator import shift_centroid
+from partdist.pdslice.manipulator import shift_centroid, rotate_xy
 
 
 class TestShiftCentroid:
@@ -66,3 +66,39 @@ class TestShiftCentroid:
         x_after = out.get_data("x")
         np.testing.assert_array_almost_equal(x_after[:100], x_before[:100] + 1.0)
         np.testing.assert_array_equal(x_after[100:], x_before[100:])
+
+
+class TestRotateXY:
+    def test_zero_angle_is_identity(self):
+        d = gauss_slice()
+        out = rotate_xy(d, theta=0.0)
+        np.testing.assert_array_equal(out.get_data("x"), d.get_data("x"))
+        np.testing.assert_array_equal(out.get_data("y"), d.get_data("y"))
+
+    def test_two_pi_is_identity_to_fp_tolerance(self):
+        d = gauss_slice()
+        out = rotate_xy(d, theta=2.0 * math.pi)
+        np.testing.assert_allclose(out.get_data("x"), d.get_data("x"), atol=1e-14)
+        np.testing.assert_allclose(out.get_data("y"), d.get_data("y"), atol=1e-14)
+
+    def test_pi_over_two_swaps_sigmas(self):
+        d = gauss_slice()
+        sx_before = d.get_data("x").std()
+        sy_before = d.get_data("y").std()
+        out = rotate_xy(d, theta=math.pi / 2.0)
+        assert abs(out.get_data("x").std() - sy_before) < 1e-12
+        assert abs(out.get_data("y").std() - sx_before) < 1e-12
+
+    def test_radius_invariant(self):
+        d = gauss_slice()
+        r_sq_before = d.get_data("x") ** 2 + d.get_data("y") ** 2
+        out = rotate_xy(d, theta=0.3)
+        r_sq_after = out.get_data("x") ** 2 + out.get_data("y") ** 2
+        np.testing.assert_allclose(r_sq_after, r_sq_before, rtol=1e-14)
+
+    def test_momentum_rotates_consistently(self):
+        d = gauss_slice()
+        p_sq_before = d.get_data("px") ** 2 + d.get_data("py") ** 2
+        out = rotate_xy(d, theta=0.5)
+        p_sq_after = out.get_data("px") ** 2 + out.get_data("py") ** 2
+        np.testing.assert_allclose(p_sq_after, p_sq_before, rtol=1e-14)

@@ -58,3 +58,27 @@ def shift_centroid(
         arr[m] += delta
         out.update_quantity(key, arr)
     return out
+
+
+def rotate_xy(
+    dist: SliceDistribution,
+    theta: float,
+    *,
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Rotate the (x, y) plane by theta; (px, py) rotates consistently."""
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    c, s = float(np.cos(theta)), float(np.sin(theta))
+    for a_key, b_key in (("x", "y"), ("px", "py")):
+        a = out.get_data(a_key).copy()
+        b = out.get_data(b_key).copy()
+        a_sel = a[m]
+        b_sel = b[m]
+        a[m] = c * a_sel - s * b_sel
+        b[m] = s * a_sel + c * b_sel
+        out.update_quantity(a_key, a)
+        out.update_quantity(b_key, b)
+    return out
