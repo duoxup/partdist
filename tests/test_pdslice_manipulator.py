@@ -272,3 +272,43 @@ class TestApplyDispersion:
         d = gauss_slice()
         with pytest.raises(ValueError, match="p_ref"):
             apply_dispersion(d, D=1e-2, p_ref=0.0)
+
+
+from partdist.pdslice.manipulator import scale_rms_x
+
+
+class TestScaleRMSX:
+    def test_factor_doubles_sigma_x(self):
+        d = gauss_slice(n=20_000)
+        sx_before = d.get_data("x").std()
+        out = scale_rms_x(d, factor=2.0)
+        assert abs(out.get_data("x").std() - 2.0 * sx_before) < 1e-10
+
+    def test_emittance_preserving_keeps_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="x", weight="lam_abs").geometric_emittance
+        out = scale_rms_x(d, factor=2.0, emittance_preserving=True)
+        eps_after = compute_phase_space_plane(out, plane="x", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - eps_before) / eps_before < 1e-12
+
+    def test_not_emittance_preserving_scales_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="x", weight="lam_abs").geometric_emittance
+        out = scale_rms_x(d, factor=2.0, emittance_preserving=False)
+        eps_after = compute_phase_space_plane(out, plane="x", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - 2.0 * eps_before) / eps_before < 1e-12
+
+    def test_y_plane_unaffected(self):
+        d = gauss_slice()
+        y_before = d.get_data("y").copy()
+        py_before = d.get_data("py").copy()
+        out = scale_rms_x(d, factor=1.5)
+        np.testing.assert_array_equal(out.get_data("y"), y_before)
+        np.testing.assert_array_equal(out.get_data("py"), py_before)
+
+    def test_rejects_nonpositive_factor(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="factor"):
+            scale_rms_x(d, factor=0.0)
+        with pytest.raises(ValueError, match="factor"):
+            scale_rms_x(d, factor=-1.0)

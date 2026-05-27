@@ -421,3 +421,50 @@ def apply_dispersion(
     pos[m] += D * delta[m]
     out.update_quantity(axis, pos)
     return out
+
+
+def scale_rms_x(
+    dist: SliceDistribution,
+    *,
+    factor: float,
+    emittance_preserving: bool = True,
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Scale x by `factor` (and px by 1/factor if emittance-preserving).
+
+    Parameters
+    ----------
+    dist : SliceDistribution
+        Input distribution.
+    factor : float
+        Scale factor for x (must be positive).
+    emittance_preserving : bool
+        If True (default), also scale px by 1/factor to preserve geometric
+        emittance. If False, px is left unchanged.
+    mask : array-like of bool or None
+        Boolean mask selecting particles to transform.  Unmasked particles
+        are left unchanged.
+    inplace : bool
+        Modify ``dist`` in place when True.  Returns the modified
+        distribution either way.
+
+    Returns
+    -------
+    SliceDistribution
+        Distribution with x (and optionally px) updated.
+        y, py, pz, and all other quantities are unchanged.
+    """
+    if factor <= 0.0:
+        raise ValueError(f"factor must be > 0, got {factor}.")
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    x = out.get_data("x").copy()
+    x[m] *= factor
+    out.update_quantity("x", x)
+    if emittance_preserving:
+        px = out.get_data("px").copy()
+        px[m] /= factor
+        out.update_quantity("px", px)
+    return out
