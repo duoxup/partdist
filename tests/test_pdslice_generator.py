@@ -15,11 +15,10 @@ class TestShapeConstruction:
     def test_gaussian_basic(self):
         g = Gaussian(sig=1e-4)
         assert g.sig == 1e-4
-        assert g.mean == 0.0
         assert g.cut is None
 
     def test_gaussian_with_cut(self):
-        g = Gaussian(sig=1e-4, mean=5e5, cut=3.0)
+        g = Gaussian(sig=1e-4, cut=3.0)
         assert g.cut == 3.0
 
     def test_gaussian_rejects_nonpositive_sig(self):
@@ -37,7 +36,6 @@ class TestShapeConstruction:
     def test_uniform_basic(self):
         u = Uniform(L=1e-3)
         assert u.L == 1e-3
-        assert u.mean == 0.0
 
     def test_uniform_rejects_nonpositive_L(self):
         with pytest.raises(ValueError, match="L"):
@@ -80,36 +78,29 @@ class TestShapeConstruction:
 
 class TestGaussianSampling:
     def test_untruncated_size_and_stats(self):
-        g = Gaussian(sig=2.0, mean=5.0)
+        g = Gaussian(sig=2.0)
         rng = np.random.default_rng(0)
         samples = g._sample(50_000, rng)
         assert samples.shape == (50_000,)
-        assert abs(samples.mean() - 5.0) < 0.05
+        assert abs(samples.mean()) < 0.05
         assert abs(samples.std() - 2.0) < 0.05
 
     def test_truncated_respects_bounds(self):
-        g = Gaussian(sig=1.0, mean=0.0, cut=2.0)
+        g = Gaussian(sig=1.0, cut=2.0)
         rng = np.random.default_rng(1)
         samples = g._sample(10_000, rng)
         assert samples.shape == (10_000,)
         assert np.all(np.abs(samples) <= 2.0 + 1e-12), \
-            "Truncated samples must lie within ±cut·sig of mean"
+            "Truncated samples must lie within ±cut·sig of zero"
 
     def test_truncated_rms_smaller_than_input_sig(self):
         """At cut=2σ, the truncated distribution's rms < input σ."""
-        g = Gaussian(sig=1.0, mean=0.0, cut=2.0)
+        g = Gaussian(sig=1.0, cut=2.0)
         rng = np.random.default_rng(2)
         samples = g._sample(50_000, rng)
         actual_rms = samples.std()
         assert 0.85 < actual_rms < 0.90, \
             f"Expected truncated rms ≈ 0.879, got {actual_rms}"
-
-    def test_truncated_with_offset_mean(self):
-        g = Gaussian(sig=1.0, mean=10.0, cut=3.0)
-        rng = np.random.default_rng(3)
-        samples = g._sample(10_000, rng)
-        assert np.all((samples >= 7.0) & (samples <= 13.0))
-        assert abs(samples.mean() - 10.0) < 0.05
 
     def test_reproducible_with_same_rng(self):
         g = Gaussian(sig=1.0)
@@ -122,14 +113,14 @@ class TestGaussianSampling:
 
 class TestUniformSampling:
     def test_bounds(self):
-        u = Uniform(L=2.0, mean=10.0)
+        u = Uniform(L=2.0)
         rng = np.random.default_rng(0)
         samples = u._sample(10_000, rng)
         assert samples.shape == (10_000,)
-        assert np.all((samples >= 9.0) & (samples <= 11.0))
+        assert np.all((samples >= -1.0) & (samples <= 1.0))
 
     def test_stats_match_uniform(self):
-        u = Uniform(L=1.0, mean=0.0)
+        u = Uniform(L=1.0)
         rng = np.random.default_rng(1)
         samples = u._sample(50_000, rng)
         assert abs(samples.mean()) < 0.01
@@ -140,22 +131,22 @@ class TestUniformSampling:
 class TestPlateauSampling:
     def test_bounded_envelope(self):
         """Samples must fall inside the rejection-sampling window."""
-        p = Plateau(L=1.0, r=0.1, mean=0.0)
+        p = Plateau(L=1.0, r=0.1)
         rng = np.random.default_rng(0)
         samples = p._sample(20_000, rng)
         assert samples.shape == (20_000,)
         bound = 0.5 + 5.0 * 0.1
         assert np.all(np.abs(samples) <= bound + 1e-12)
 
-    def test_symmetric_about_mean(self):
-        p = Plateau(L=2.0, r=0.2, mean=3.0)
+    def test_symmetric_about_zero(self):
+        p = Plateau(L=2.0, r=0.2)
         rng = np.random.default_rng(1)
         samples = p._sample(50_000, rng)
-        assert abs(samples.mean() - 3.0) < 0.02
+        assert abs(samples.mean()) < 0.02
 
     def test_sigma_in_expected_range(self):
         """ASTRA: L/(2√3) ≤ σ ≤ L/2.8 for the plateau family."""
-        p = Plateau(L=1.0, r=0.1, mean=0.0)
+        p = Plateau(L=1.0, r=0.1)
         rng = np.random.default_rng(2)
         samples = p._sample(100_000, rng)
         sigma = samples.std()
@@ -164,7 +155,7 @@ class TestPlateauSampling:
 
     def test_approaches_uniform_for_sharp_edges(self):
         """As r → 0, plateau should approach uniform σ = L/(2√3)."""
-        p = Plateau(L=1.0, r=1e-3, mean=0.0)
+        p = Plateau(L=1.0, r=1e-3)
         rng = np.random.default_rng(3)
         samples = p._sample(50_000, rng)
         sigma = samples.std()
@@ -219,30 +210,35 @@ class TestIsotropicSampling:
 
 class TestMakeSliceValidation:
     GAUSS = Gaussian(sig=1e-4)
-    GAUSS_PZ = Gaussian(sig=1e3, mean=5e5)
+    GAUSS_PZ = Gaussian(sig=1e3)
+    PZ_ANCHOR = 5e5
 
     def test_rejects_zero_n(self):
         with pytest.raises(ValueError, match="n"):
             make_slice(0, I_total=1.0,
                        x=self.GAUSS, y=self.GAUSS,
-                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_rejects_nonpositive_I_total(self):
         with pytest.raises(ValueError, match="I_total"):
             make_slice(100, I_total=0.0,
                        x=self.GAUSS, y=self.GAUSS,
-                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
         with pytest.raises(ValueError, match="I_total"):
             make_slice(100, I_total=-1.0,
                        x=self.GAUSS, y=self.GAUSS,
-                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_transverse_conflicts_with_x_or_y(self):
         ru = RadialUniform(R=1e-3)
         with pytest.raises(ValueError, match="transverse"):
             make_slice(100, I_total=1.0, transverse=ru,
                        x=self.GAUSS, y=self.GAUSS,
-                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_transverse_momentum_conflicts_with_px_or_py(self):
         ru = RadialUniform(R=1e3)
@@ -250,7 +246,8 @@ class TestMakeSliceValidation:
             make_slice(100, I_total=1.0,
                        x=self.GAUSS, y=self.GAUSS,
                        transverse_momentum=ru, px=self.GAUSS,
-                       py=self.GAUSS, pz=self.GAUSS_PZ)
+                       py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_momentum_conflicts_with_px_py_pz_or_transverse_momentum(self):
         iso = Isotropic(p_mag=5e5)
@@ -259,21 +256,37 @@ class TestMakeSliceValidation:
                        x=self.GAUSS, y=self.GAUSS,
                        momentum=iso, pz=self.GAUSS_PZ)
 
+    def test_pz_anchor_conflicts_with_momentum(self):
+        iso = Isotropic(p_mag=5e5)
+        with pytest.raises(ValueError, match="pz_anchor"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       momentum=iso, pz_anchor=self.PZ_ANCHOR)
+
     def test_missing_transverse_position(self):
         with pytest.raises(ValueError, match="x.*y|transverse"):
             make_slice(100, I_total=1.0,
-                       px=self.GAUSS, py=self.GAUSS, pz=self.GAUSS_PZ)
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_missing_transverse_momentum(self):
         with pytest.raises(ValueError, match="px.*py|transverse_momentum|momentum"):
             make_slice(100, I_total=1.0,
-                       x=self.GAUSS, y=self.GAUSS, pz=self.GAUSS_PZ)
+                       x=self.GAUSS, y=self.GAUSS,
+                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
     def test_missing_pz(self):
         with pytest.raises(ValueError, match="pz|momentum"):
             make_slice(100, I_total=1.0,
                        x=self.GAUSS, y=self.GAUSS,
                        px=self.GAUSS, py=self.GAUSS)
+
+    def test_missing_pz_anchor(self):
+        with pytest.raises(ValueError, match="pz_anchor"):
+            make_slice(100, I_total=1.0,
+                       x=self.GAUSS, y=self.GAUSS,
+                       px=self.GAUSS, py=self.GAUSS,
+                       pz=self.GAUSS_PZ)
 
 
 class TestMakeSliceSmoke:
@@ -286,7 +299,7 @@ class TestMakeSliceSmoke:
             y=Gaussian(sig=1e-4),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=0,
         )
         assert isinstance(d, SliceDistribution)
@@ -304,7 +317,7 @@ class TestMakeSliceSmoke:
             I_total=I_total,
             x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
             px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=0,
         )
         lam = d.get_data("lam")
@@ -321,7 +334,7 @@ class TestMakeSliceSmoke:
             I_total=1e-3,
             x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
             px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=7,
         )
         a = make_slice(500, **kwargs)
@@ -337,7 +350,7 @@ class TestMakeSliceSmoke:
                 I_total=1e-3,
                 x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
                 px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
-                pz=Gaussian(sig=1e3, mean=-5e5),  # Negative mean ensures backward motion
+                pz=Gaussian(sig=1e3), pz_anchor=-5e5,  # backward anchor
                 seed=0,
             )
 
@@ -352,7 +365,7 @@ class TestMakeSliceIntegration:
             y=Gaussian(sig=3e-4),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=2e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=0,
         )
         assert abs(d.get_data("x").std() - 2e-4) < 5e-6
@@ -369,7 +382,7 @@ class TestMakeSliceIntegration:
             y=Uniform(L=2e-3),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=1,
         )
         assert np.all(np.abs(d.get_data("x")) <= 1e-3 + 1e-12)
@@ -383,7 +396,7 @@ class TestMakeSliceIntegration:
             y=Gaussian(sig=1e-4),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=1e3),
-            pz=Plateau(L=2e4, r=2e3, mean=5e5),
+            pz=Plateau(L=2e4, r=2e3), pz_anchor=5e5,
             seed=2,
         )
         pz = d.get_data("pz")
@@ -397,7 +410,7 @@ class TestMakeSliceIntegration:
             transverse=RadialUniform(R=1e-3),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=3,
         )
         r = np.sqrt(d.get_data("x") ** 2 + d.get_data("y") ** 2)
@@ -410,7 +423,7 @@ class TestMakeSliceIntegration:
             x=Gaussian(sig=1e-4),
             y=Gaussian(sig=1e-4),
             transverse_momentum=RadialUniform(R=2e3),
-            pz=Gaussian(sig=1e3, mean=5e5),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
             seed=4,
         )
         rp = np.sqrt(d.get_data("px") ** 2 + d.get_data("py") ** 2)
@@ -441,7 +454,7 @@ class TestMakeSliceIntegration:
             y=Gaussian(sig=1e-4),
             px=Gaussian(sig=1e3),
             py=Gaussian(sig=1e3),
-            pz=Gaussian(sig=1e3, mean=5e5, cut=2.0),
+            pz=Gaussian(sig=1e3, cut=2.0), pz_anchor=5e5,
             seed=6,
         )
         assert d.n == n

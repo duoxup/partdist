@@ -26,22 +26,18 @@ import numpy as np
 
 @dataclass(frozen=True)
 class Gaussian:
-    """1D Gaussian shape.
+    """1D zero-mean Gaussian shape.
 
     Parameters
     ----------
     sig : float
         rms (= σ) of the input Gaussian (before truncation, if any).
-    mean : float
-        Centroid. Default 0.0; non-zero only physically meaningful on the
-        pz axis (acts as the longitudinal momentum anchor).
     cut : float | None
         Truncation in σ units (ASTRA's ``C_sig_*``). If set, sampling
-        draws from a Gaussian restricted to ``[mean - cut*sig, mean + cut*sig]``;
+        draws from a Gaussian restricted to ``[-cut*sig, +cut*sig]``;
         the *resulting* rms is smaller than ``sig``.
     """
     sig: float
-    mean: float = 0.0
     cut: Optional[float] = None
 
     def __post_init__(self) -> None:
@@ -52,22 +48,21 @@ class Gaussian:
 
     def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
         if self.cut is None:
-            return rng.normal(loc=self.mean, scale=self.sig, size=n)
+            return rng.normal(loc=0.0, scale=self.sig, size=n)
         from scipy.stats import truncnorm
         a, b = -self.cut, self.cut
         return truncnorm.rvs(
-            a, b, loc=self.mean, scale=self.sig, size=n, random_state=rng,
+            a, b, loc=0.0, scale=self.sig, size=n, random_state=rng,
         )
 
 
 @dataclass(frozen=True)
 class Uniform:
-    """1D uniform shape on ``[mean - L/2, mean + L/2]``.
+    """1D zero-mean uniform shape on ``[-L/2, +L/2]``.
 
     L is FWHM = full support width (hard edges).
     """
     L: float
-    mean: float = 0.0
 
     def __post_init__(self) -> None:
         if self.L <= 0:
@@ -75,22 +70,21 @@ class Uniform:
 
     def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
         half = self.L / 2.0
-        return rng.uniform(low=self.mean - half, high=self.mean + half, size=n)
+        return rng.uniform(low=-half, high=half, size=n)
 
 
 @dataclass(frozen=True)
 class Plateau:
-    """1D flat-top shape with Fermi-Dirac soft edges.
+    """1D zero-mean flat-top shape with Fermi-Dirac soft edges.
 
-    PDF (symmetric):
-        f(x) ∝ 1 / (1 + exp(2·(2|x - mean| - L) / r))
+    PDF (symmetric about 0):
+        f(x) ∝ 1 / (1 + exp(2·(2|x| - L) / r))
 
     L is the full width at half maximum (i.e. f(±L/2) = f(0)/2); the actual
     support extends ~5·r beyond ±L/2 due to the Fermi-Dirac tails.
     """
     L: float
     r: float
-    mean: float = 0.0
 
     def __post_init__(self) -> None:
         if self.L <= 0:
@@ -118,7 +112,7 @@ class Plateau:
             take = min(n - filled, len(accepted))
             out[filled:filled + take] = accepted[:take]
             filled += take
-        return out + self.mean
+        return out
 
 
 @dataclass(frozen=True)
@@ -188,6 +182,7 @@ def make_slice(
     px: Optional[_Axis1D] = None,
     py: Optional[_Axis1D] = None,
     pz: Optional[_Axis1D] = None,
+    pz_anchor: Optional[float] = None,
     transverse: Optional[RadialUniform] = None,
     transverse_momentum: Optional[RadialUniform] = None,
     momentum: Optional[Isotropic] = None,
@@ -207,15 +202,21 @@ def make_slice(
     z : float
         Longitudinal position of the slice [m].
     x, y, px, py, pz : 1D-shape | None
-        Independent-axis shapes. Mutually exclusive with the corresponding
-        joint shape.
+        Independent-axis shapes (zero-mean). Mutually exclusive with the
+        corresponding joint shape.
+    pz_anchor : float | None
+        Mean longitudinal momentum ⟨p_z⟩ in eV/c. Required iff ``pz`` is
+        a 1D shape (since the generator only produces zero-mean shapes,
+        a forward-moving beam needs an explicit anchor). Must NOT be set
+        when ``momentum=Isotropic(...)`` is used (Isotropic determines pz
+        entirely from its half-sphere geometry).
     transverse : RadialUniform | None
         Joint (x, y) shape. Excludes ``x`` and ``y``.
     transverse_momentum : RadialUniform | None
         Joint (px, py) shape. Excludes ``px`` and ``py``.
     momentum : Isotropic | None
         Joint (px, py, pz) shape. Excludes ``px``, ``py``, ``pz``,
-        and ``transverse_momentum``.
+        ``pz_anchor``, and ``transverse_momentum``.
     seed : int | None
         Seed for the internal numpy Generator. None ⇒ non-deterministic.
     """
@@ -241,6 +242,11 @@ def make_slice(
             "Cannot set 'momentum' together with any of 'px', 'py', 'pz', "
             "or 'transverse_momentum'."
         )
+    if momentum is not None and pz_anchor is not None:
+        raise ValueError(
+            "Cannot set 'pz_anchor' together with 'momentum'; the Isotropic "
+            "shape determines pz entirely from its half-sphere geometry."
+        )
 
     if transverse is None and (x is None or y is None):
         raise ValueError(
@@ -254,6 +260,13 @@ def make_slice(
             )
         if pz is None:
             raise ValueError("Must specify either 'momentum' or 'pz'.")
+        if pz_anchor is None:
+            raise ValueError(
+                "Must specify 'pz_anchor' (mean longitudinal momentum in "
+                "eV/c) when 'pz' is given. Shapes are zero-mean by design; "
+                "use 'pz_anchor' to set the beam's longitudinal momentum "
+                "centroid ⟨p_z⟩."
+            )
 
     # ---- sampling ----
     rng = np.random.default_rng(seed)
@@ -275,7 +288,7 @@ def make_slice(
         else:
             px_arr = px._sample(n, rng)  # type: ignore[union-attr]  # validated non-None above
             py_arr = py._sample(n, rng)  # type: ignore[union-attr]  # validated non-None above
-        pz_arr = pz._sample(n, rng)      # type: ignore[union-attr]  # validated non-None above
+        pz_arr = pz._sample(n, rng) + pz_anchor  # type: ignore[union-attr,operator]  # both validated non-None above
 
     # ---- I_total → uniform lam ----
     from ..pd3d.utils import momentum_evc_to_velocity
