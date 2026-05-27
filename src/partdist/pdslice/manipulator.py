@@ -34,3 +34,27 @@ from .core import SliceDistribution
 
 
 ArrayLike = Union[np.ndarray, Sequence[float], float]
+
+
+def shift_centroid(
+    dist: SliceDistribution,
+    *,
+    dx: float = 0.0,
+    dy: float = 0.0,
+    dpx: float = 0.0,
+    dpy: float = 0.0,
+    dpz: float = 0.0,
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Add constant per-axis offsets to selected particles."""
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    for key, delta in (("x", dx), ("y", dy), ("px", dpx), ("py", dpy), ("pz", dpz)):
+        if delta == 0.0:
+            continue
+        arr = out.get_data(key).copy()
+        arr[m] += delta
+        out.update_quantity(key, arr)
+    return out
