@@ -133,7 +133,7 @@ def scatter_pd3d(
     *,
     x: str,
     y: str,
-    c: str | None = None,
+    c: str | None = "Q_abs",
     fig=None,
     ax=None,
     colorbar: bool | None = None,
