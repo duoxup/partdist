@@ -141,3 +141,40 @@ class TestHist2dPdslice:
             hist2d_pdslice(d, x="z", y="px")
         with pytest.raises(ValueError, match="scalar z"):
             hist2d_pdslice(d, x="x", y="z")
+
+
+class TestPlotBinnedProfile:
+    def test_returns_four_tuple(self):
+        from partdist.pdslice.viz import plot_binned_profile
+        d = gauss_slice()
+        fig, ax, line, profile = plot_binned_profile(d, "x", "px")
+        assert isinstance(line, Line2D)
+        from partdist.pd3d.analysis import BinnedProfileResult
+        assert isinstance(profile, BinnedProfileResult)
+        plt.close(fig)
+
+    def test_default_weight_calls_lam_abs(self):
+        """If the default were 'Q_abs' it would KeyError on a SliceDistribution
+        (no Q_abs derived quantity). Reaching weight_sum>0 proves lam_abs."""
+        from partdist.pdslice.viz import plot_binned_profile
+        d = gauss_slice()
+        fig, ax, line, profile = plot_binned_profile(d, "x", "px")
+        assert float(np.sum(profile.weight_sum)) > 0
+        plt.close(fig)
+
+    def test_explicit_array_skips_z_check(self):
+        from partdist.pdslice.viz import plot_binned_profile
+        d = gauss_slice()
+        x_arr = d.get_data("x")
+        y_arr = d.get_data("px")
+        fig, ax, line, profile = plot_binned_profile(d, x_arr, y_arr)
+        # no exception; runs to completion
+        from partdist.pd3d.analysis import BinnedProfileResult
+        assert isinstance(profile, BinnedProfileResult)
+        plt.close(fig)
+
+    def test_rejects_x_key_z(self):
+        from partdist.pdslice.viz import plot_binned_profile
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="scalar z"):
+            plot_binned_profile(d, "z", "px")

@@ -202,3 +202,129 @@ def hist2d_pdslice(
         )
 
     return fig, ax, mesh, hist, xedges_raw, yedges_raw
+
+
+def plot_binned_profile(
+    dist: SliceDistribution,
+    x: Union[str, np.ndarray],
+    y: Union[str, np.ndarray],
+    *,
+    bins: int = 100,
+    x_range: Optional[tuple[float, float]] = None,
+    weight: Union[None, str, np.ndarray] = "lam_abs",
+    stat: str = "weighted_mean",
+    min_count: int = 1,
+    min_weight_sum: float = 0.0,
+    mask: Optional[np.ndarray] = None,
+    plot_stat: str = "stat",
+    show_std_band: bool = False,
+    std_band_alpha: float = 0.3,
+    fig=None,
+    ax=None,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+    **plot_kwargs: Any,
+):
+    """1D binned profile y(x) for SliceDistribution.
+
+    Mirrors partdist.pd3d.viz.plot_binned_profile but (a) rejects 'z' axis
+    keys (string only — ndarray inputs skip the check) and (b) defaults
+    weight='lam_abs' instead of 'Q_abs'. The latter matters because
+    SliceDistribution has no 'Q_abs' derived quantity; using the upstream
+    pd3d default would raise KeyError.
+
+    Returns (fig, ax, line, profile).
+    """
+    if isinstance(x, str):
+        _check_z_not_axis(x)
+    if isinstance(y, str):
+        _check_z_not_axis(y)
+
+    from ..pd3d.analysis import compute_binned_profile
+
+    fig, ax = _ensure_fig_ax(fig, ax)
+    fig.set_layout_engine("constrained")
+
+    profile = compute_binned_profile(
+        dist,
+        x,
+        y,
+        bins=bins,
+        x_range=x_range,
+        weight=weight,
+        stat=stat,
+        min_count=min_count,
+        min_weight_sum=min_weight_sum,
+        mask=mask,
+    )
+
+    if plot_stat == "stat":
+        y_data = profile.y_valid
+    elif plot_stat == "std":
+        y_data = profile.y_std_valid
+    elif plot_stat == "rms":
+        y_data = profile.y_rms_valid
+    else:
+        raise ValueError(f"Unknown plot_stat={plot_stat!r}. Choose 'stat', 'std', or 'rms'.")
+
+    x_data = profile.x_valid
+
+    x_unit = ""
+    if isinstance(x, str):
+        try:
+            x_unit = dist.get_quantity(x).unit or ""
+        except KeyError:
+            pass
+
+    y_unit = ""
+    if isinstance(y, str):
+        try:
+            y_unit = dist.get_quantity(y).unit or ""
+        except KeyError:
+            pass
+
+    x_mult, x_unit_scaled = _autoscale(x_data, x_unit)
+    y_mult, y_unit_scaled = _autoscale(y_data, y_unit)
+    x_data_scaled = np.asarray(x_data, dtype=float) * x_mult
+    y_data_scaled = np.asarray(y_data, dtype=float) * y_mult
+
+    line, = ax.plot(x_data_scaled, y_data_scaled, **plot_kwargs)
+
+    if show_std_band and plot_stat == "stat":
+        y_std_scaled = np.asarray(profile.y_std_valid, dtype=float) * y_mult
+        ax.fill_between(
+            x_data_scaled,
+            y_data_scaled - y_std_scaled,
+            y_data_scaled + y_std_scaled,
+            alpha=std_band_alpha,
+            color=line.get_color(),
+        )
+
+    if xlabel is None and isinstance(x, str):
+        try:
+            xlabel = _label_from_key(dist, x, unit_override=x_unit_scaled)
+        except KeyError:
+            xlabel = str(x)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+
+    if ylabel is None and isinstance(y, str):
+        try:
+            yq = dist.get_quantity(y)
+            yname = yq.latex_name or yq.short_name or yq.name
+            if plot_stat == "std":
+                ylabel = (
+                    f"σ({yname}) [{y_unit_scaled}]" if y_unit_scaled else f"σ({yname})"
+                )
+            elif plot_stat == "rms":
+                ylabel = (
+                    f"RMS({yname}) [{y_unit_scaled}]" if y_unit_scaled else f"RMS({yname})"
+                )
+            else:
+                ylabel = _label_from_key(dist, y, unit_override=y_unit_scaled)
+        except KeyError:
+            ylabel = str(y)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    return fig, ax, line, profile
