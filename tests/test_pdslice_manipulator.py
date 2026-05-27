@@ -324,6 +324,20 @@ class TestScaleRMSY:
         out = scale_rms_y(d, factor=2.0)
         assert abs(out.get_data("y").std() - 2.0 * sy_before) < 1e-10
 
+    def test_emittance_preserving_keeps_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="y", weight="lam_abs").geometric_emittance
+        out = scale_rms_y(d, factor=2.0, emittance_preserving=True)
+        eps_after = compute_phase_space_plane(out, plane="y", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - eps_before) / eps_before < 1e-12
+
+    def test_not_emittance_preserving_scales_emittance(self):
+        d = gauss_slice(n=20_000)
+        eps_before = compute_phase_space_plane(d, plane="y", weight="lam_abs").geometric_emittance
+        out = scale_rms_y(d, factor=2.0, emittance_preserving=False)
+        eps_after = compute_phase_space_plane(out, plane="y", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - 2.0 * eps_before) / eps_before < 1e-12
+
     def test_x_plane_unaffected(self):
         d = gauss_slice()
         x_before = d.get_data("x").copy()

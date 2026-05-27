@@ -208,13 +208,12 @@ def match_twiss_x(
     if beta_old <= 0.0:
         raise ValueError("Current beta is non-positive, cannot perform Twiss matching.")
 
-    # Courant-Snyder transformation matrix
+    # Courant-Snyder transformation matrix (upper-triangular; r12 ≡ 0)
     r11 = np.sqrt(beta / beta_old)
-    r12 = 0.0
     r21 = (alpha_old - alpha) / np.sqrt(beta_old * beta)
     r22 = np.sqrt(beta_old / beta)
 
-    work_u_new = r11 * work_u + r12 * work_up
+    work_u_new = r11 * work_u
     work_up_new = r21 * work_u + r22 * work_up
 
     if center_before_match and preserve_centroid:
@@ -328,13 +327,12 @@ def match_twiss_y(
     if beta_old <= 0.0:
         raise ValueError("Current beta is non-positive, cannot perform Twiss matching.")
 
-    # Courant-Snyder transformation matrix
+    # Courant-Snyder transformation matrix (upper-triangular; r12 ≡ 0)
     r11 = np.sqrt(beta / beta_old)
-    r12 = 0.0
     r21 = (alpha_old - alpha) / np.sqrt(beta_old * beta)
     r22 = np.sqrt(beta_old / beta)
 
-    work_u_new = r11 * work_u + r12 * work_up
+    work_u_new = r11 * work_u
     work_up_new = r21 * work_u + r22 * work_up
 
     if center_before_match and preserve_centroid:
