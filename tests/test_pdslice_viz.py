@@ -86,3 +86,58 @@ class TestScatterPdslice:
         d = gauss_slice()
         with pytest.raises(ValueError, match="scalar z"):
             scatter_pdslice(d, x="x", y="z")
+
+
+class TestHist2dPdslice:
+    def test_returns_six_tuple(self):
+        from partdist.pdslice.viz import hist2d_pdslice
+        d = gauss_slice()
+        result = hist2d_pdslice(d, x="x", y="px", show_projections=False)
+        assert len(result) == 6
+        fig, ax, mesh, hist, xedges, yedges = result
+        assert hist.shape == (100, 100)
+        plt.close(fig)
+
+    def test_default_weight_is_lam_abs(self):
+        """For uniform-lam fixture, lam_abs-weighted and unweighted hists
+        differ only by a scalar multiple — normalised forms match."""
+        from partdist.pdslice.viz import hist2d_pdslice
+        d = gauss_slice()
+        fig_c, _, _, hist_counts, _, _ = hist2d_pdslice(
+            d, x="x", y="px", weight=None, show_projections=False,
+        )
+        plt.close(fig_c)
+        fig_l, _, _, hist_lam, _, _ = hist2d_pdslice(
+            d, x="x", y="px", show_projections=False,
+        )
+        plt.close(fig_l)
+        nz = hist_counts > 0
+        ratio_counts = hist_counts[nz] / hist_counts[nz].mean()
+        ratio_lam = hist_lam[nz] / hist_lam[nz].mean()
+        np.testing.assert_allclose(ratio_lam, ratio_counts, rtol=1e-12)
+
+    def test_weight_none_gives_counts(self):
+        from partdist.pdslice.viz import hist2d_pdslice
+        d = gauss_slice()
+        fig, _, _, hist, _, _ = hist2d_pdslice(
+            d, x="x", y="px", weight=None, show_projections=False,
+        )
+        plt.close(fig)
+        assert int(hist.sum()) == len(d)
+
+    def test_show_projections_off(self):
+        from partdist.pdslice.viz import hist2d_pdslice
+        d = gauss_slice()
+        fig, ax, _, _, _, _ = hist2d_pdslice(
+            d, x="x", y="px", show_projections=False,
+        )
+        assert len(ax.lines) == 0
+        plt.close(fig)
+
+    def test_rejects_z_axis(self):
+        from partdist.pdslice.viz import hist2d_pdslice
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="scalar z"):
+            hist2d_pdslice(d, x="z", y="px")
+        with pytest.raises(ValueError, match="scalar z"):
+            hist2d_pdslice(d, x="x", y="z")
