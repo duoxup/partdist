@@ -352,3 +352,35 @@ def match_twiss_y(
     out.update_quantity("y", u_new)
     out.update_quantity("py", pu_new)
     return out
+
+
+def match_twiss_xy(
+    dist: SliceDistribution,
+    alpha_x: float,
+    beta_x: float,
+    alpha_y: float,
+    beta_y: float,
+    *,
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    center_before_match: bool = True,
+    preserve_centroid: bool = True,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Match Twiss in both transverse planes (x then y)."""
+    out = match_twiss_x(
+        dist,
+        alpha=alpha_x, beta=beta_x,
+        weight=weight, mask=mask,
+        center_before_match=center_before_match,
+        preserve_centroid=preserve_centroid,
+        inplace=inplace,
+    )
+    return match_twiss_y(
+        out,
+        alpha=alpha_y, beta=beta_y,
+        weight=weight, mask=mask,
+        center_before_match=center_before_match,
+        preserve_centroid=preserve_centroid,
+        inplace=True,
+    )

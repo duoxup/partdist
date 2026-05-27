@@ -202,3 +202,27 @@ class TestMatchTwissY:
         out = match_twiss_y(d, alpha=1.0, beta=4.0)
         np.testing.assert_array_equal(out.get_data("x"), x_before)
         np.testing.assert_array_equal(out.get_data("px"), px_before)
+
+
+from partdist.pdslice.manipulator import match_twiss_xy
+
+
+class TestMatchTwissXY:
+    def test_recovers_both_targets(self):
+        d = gauss_slice()
+        out = match_twiss_xy(d, alpha_x=2.0, beta_x=5.0, alpha_y=1.0, beta_y=4.0)
+        rx = compute_phase_space_plane(out, plane="x", weight="lam_abs")
+        ry = compute_phase_space_plane(out, plane="y", weight="lam_abs")
+        assert abs(rx.alpha - 2.0) < 1e-10 and abs(rx.beta - 5.0) < 1e-10
+        assert abs(ry.alpha - 1.0) < 1e-10 and abs(ry.beta - 4.0) < 1e-10
+
+    def test_order_independent(self):
+        d = gauss_slice()
+        out_xy = match_twiss_xy(d, alpha_x=2.0, beta_x=5.0, alpha_y=1.0, beta_y=4.0)
+        # equivalent: apply y first, then x
+        out_yx = match_twiss_x(
+            match_twiss_y(d, alpha=1.0, beta=4.0),
+            alpha=2.0, beta=5.0,
+        )
+        np.testing.assert_allclose(out_xy.get_data("x"), out_yx.get_data("x"), atol=1e-12)
+        np.testing.assert_allclose(out_xy.get_data("y"), out_yx.get_data("y"), atol=1e-12)
