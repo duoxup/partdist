@@ -178,3 +178,9 @@ class TestPlotBinnedProfile:
         d = gauss_slice()
         with pytest.raises(ValueError, match="scalar z"):
             plot_binned_profile(d, "z", "px")
+
+    def test_rejects_y_key_z(self):
+        from partdist.pdslice.viz import plot_binned_profile
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="scalar z"):
+            plot_binned_profile(d, "x", "z")

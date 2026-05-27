@@ -22,7 +22,6 @@ import numpy as np
 
 from ..pd3d.viz import (
     _ensure_fig_ax,
-    _to_unit_like,
     _autoscale,
     _label_from_key,
     _resolve_range,
