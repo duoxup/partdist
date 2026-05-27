@@ -336,3 +336,68 @@ class TestScaleRMSY:
         d = gauss_slice()
         with pytest.raises(ValueError, match="factor"):
             scale_rms_y(d, factor=0.0)
+        with pytest.raises(ValueError, match="factor"):
+            scale_rms_y(d, factor=-1.0)
+
+
+class TestSharedBehaviour:
+    @pytest.mark.parametrize("op", [
+        lambda d, **kw: match_twiss_x(d, alpha=1.0, beta=3.0, **kw),
+        lambda d, **kw: apply_dispersion(d, D=1e-2, **kw),
+        lambda d, **kw: center_beam(d, **kw),
+    ])
+    def test_inplace_false_returns_new_instance(self, op):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        out = op(d)
+        assert out is not d
+        np.testing.assert_array_equal(d.get_data("x"), x_before)
+
+    @pytest.mark.parametrize("op", [
+        lambda d, **kw: match_twiss_x(d, alpha=1.0, beta=3.0, **kw),
+        lambda d, **kw: apply_dispersion(d, D=1e-2, **kw),
+        lambda d, **kw: center_beam(d, **kw),
+    ])
+    def test_inplace_true_returns_same_instance(self, op):
+        d = gauss_slice()
+        out = op(d, inplace=True)
+        assert out is d
+
+    @pytest.mark.parametrize("op", [
+        lambda d, **kw: match_twiss_x(d, alpha=1.0, beta=3.0, **kw),
+        lambda d, **kw: apply_dispersion(d, D=1e-2, **kw),
+        lambda d, **kw: center_beam(d, **kw),
+    ])
+    def test_mask_leaves_unmasked_particles_unchanged(self, op):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        y_before = d.get_data("y").copy()
+        px_before = d.get_data("px").copy()
+        py_before = d.get_data("py").copy()
+        mask = np.zeros(len(d), dtype=bool)
+        mask[:100] = True
+        out = op(d, mask=mask)
+        np.testing.assert_array_equal(out.get_data("x")[100:], x_before[100:])
+        np.testing.assert_array_equal(out.get_data("y")[100:], y_before[100:])
+        np.testing.assert_array_equal(out.get_data("px")[100:], px_before[100:])
+        np.testing.assert_array_equal(out.get_data("py")[100:], py_before[100:])
+
+    @pytest.mark.parametrize("op", [
+        lambda d, **kw: match_twiss_x(d, alpha=1.0, beta=3.0, **kw),
+        lambda d, **kw: apply_dispersion(d, D=1e-2, **kw),
+        lambda d, **kw: center_beam(d, **kw),
+    ])
+    def test_weight_accepts_three_forms_equivalently(self, op):
+        """For a uniform-lam beam, weight=None, weight="lam_abs", and an
+        explicit uniform array should all give identical output."""
+        d = gauss_slice()
+        out_none = op(d, weight=None)
+        out_str = op(d, weight="lam_abs")
+        out_arr = op(d, weight=np.full(len(d), 1.0))
+        for key in ("x", "y", "px", "py"):
+            np.testing.assert_allclose(
+                out_none.get_data(key), out_str.get_data(key), rtol=1e-12, atol=1e-15,
+            )
+            np.testing.assert_allclose(
+                out_str.get_data(key), out_arr.get_data(key), rtol=1e-12, atol=1e-15,
+            )
