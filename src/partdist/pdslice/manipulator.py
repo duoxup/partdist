@@ -384,3 +384,40 @@ def match_twiss_xy(
         preserve_centroid=preserve_centroid,
         inplace=True,
     )
+
+
+def apply_dispersion(
+    dist: SliceDistribution,
+    D: float,
+    *,
+    axis: Literal["x", "y"] = "x",
+    p_ref: Optional[float] = None,
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Add position dispersion: pos ← pos + D · (pz - p_ref) / p_ref."""
+    if axis not in {"x", "y"}:
+        raise ValueError(f"axis must be 'x' or 'y', got {axis!r}.")
+
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    pz = out.get_data("pz")
+
+    if p_ref is None:
+        w = _get_weight_array(out, weight, absolute=True)
+        valid = m & np.isfinite(w) & (w > 0.0) & np.isfinite(pz)
+        wsum = float(np.sum(w[valid]))
+        if wsum <= 0.0:
+            raise ValueError("Total weight must be positive to derive p_ref.")
+        p_ref = float(np.sum(pz[valid] * w[valid]) / wsum)
+
+    if p_ref == 0.0:
+        raise ValueError("p_ref must be non-zero.")
+
+    delta = (pz - p_ref) / p_ref
+    pos = out.get_data(axis).copy()
+    pos[m] += D * delta[m]
+    out.update_quantity(axis, pos)
+    return out

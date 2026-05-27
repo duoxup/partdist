@@ -226,3 +226,49 @@ class TestMatchTwissXY:
         )
         np.testing.assert_allclose(out_xy.get_data("x"), out_yx.get_data("x"), atol=1e-12)
         np.testing.assert_allclose(out_xy.get_data("y"), out_yx.get_data("y"), atol=1e-12)
+
+
+from partdist.pdslice.manipulator import apply_dispersion
+
+
+class TestApplyDispersion:
+    def test_recovers_D_from_linear_regression_x(self):
+        d = gauss_slice(n=20_000)
+        D = 5e-2
+        out = apply_dispersion(d, D=D, axis="x")
+        x = out.get_data("x")
+        pz = out.get_data("pz")
+        w = np.abs(out.get_data("lam"))
+        wsum = float(np.sum(w))
+        p_ref = float(np.sum(pz * w) / wsum)
+        delta = (pz - p_ref) / p_ref
+        # weighted slope of x vs delta around the new centroid
+        mean_x = float(np.sum(x * w) / wsum)
+        mean_d = float(np.sum(delta * w) / wsum)
+        num = float(np.sum(w * (x - mean_x) * (delta - mean_d)))
+        den = float(np.sum(w * (delta - mean_d) ** 2))
+        slope = num / den
+        assert abs(slope - D) / D < 0.05
+
+    def test_axis_y_independent_of_x(self):
+        d = gauss_slice()
+        x_before = d.get_data("x").copy()
+        out = apply_dispersion(d, D=1e-2, axis="y")
+        np.testing.assert_array_equal(out.get_data("x"), x_before)
+
+    def test_explicit_p_ref(self):
+        d = gauss_slice()
+        out = apply_dispersion(d, D=1e-2, axis="x", p_ref=5e5)
+        delta = (d.get_data("pz") - 5e5) / 5e5
+        expected = d.get_data("x") + 1e-2 * delta
+        np.testing.assert_allclose(out.get_data("x"), expected, rtol=1e-12)
+
+    def test_rejects_bad_axis(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="axis"):
+            apply_dispersion(d, D=1e-2, axis="z")
+
+    def test_rejects_zero_p_ref(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="p_ref"):
+            apply_dispersion(d, D=1e-2, p_ref=0.0)
