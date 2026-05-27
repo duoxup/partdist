@@ -102,3 +102,39 @@ class TestRotateXY:
         out = rotate_xy(d, theta=0.5)
         p_sq_after = out.get_data("px") ** 2 + out.get_data("py") ** 2
         np.testing.assert_allclose(p_sq_after, p_sq_before, rtol=1e-14)
+
+
+from partdist.pdslice.manipulator import center_beam
+
+
+def _weighted_mean(arr, w):
+    return float(np.sum(arr * w) / np.sum(w))
+
+
+class TestCenterBeam:
+    def test_centers_default_axes(self):
+        d = shift_centroid(gauss_slice(), dx=5e-4, dy=-3e-4, dpx=50.0, dpy=-30.0)
+        out = center_beam(d)
+        w = np.abs(out.get_data("lam"))
+        for k in ("x", "y", "px", "py"):
+            assert abs(_weighted_mean(out.get_data(k), w)) < 1e-10
+
+    def test_pz_unchanged_by_default(self):
+        d = gauss_slice()
+        pz_before = d.get_data("pz").copy()
+        out = center_beam(d)
+        np.testing.assert_array_equal(out.get_data("pz"), pz_before)
+
+    def test_explicit_pz_axis_centers_pz(self):
+        d = gauss_slice()
+        out = center_beam(d, axes=("x", "y", "px", "py", "pz"))
+        w = np.abs(out.get_data("lam"))
+        assert abs(_weighted_mean(out.get_data("pz"), w)) < 1e-5  # pz scale ~ 5e5
+
+    def test_subset_axes(self):
+        d = shift_centroid(gauss_slice(), dx=5e-4, dy=-3e-4)
+        y_before = d.get_data("y").copy()
+        out = center_beam(d, axes=("x",))
+        w = np.abs(out.get_data("lam"))
+        assert abs(_weighted_mean(out.get_data("x"), w)) < 1e-10
+        np.testing.assert_array_equal(out.get_data("y"), y_before)

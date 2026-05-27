@@ -82,3 +82,33 @@ def rotate_xy(
         out.update_quantity(a_key, a)
         out.update_quantity(b_key, b)
     return out
+
+
+def center_beam(
+    dist: SliceDistribution,
+    *,
+    axes: Sequence[str] = ("x", "y", "px", "py"),
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Subtract the weighted mean from each axis in `axes` so its centroid → 0.
+
+    Default `axes` excludes `pz` to preserve the longitudinal anchor that
+    generator.make_slice requires for forward-beam consistency. Pass
+    `axes=("x", "y", "px", "py", "pz")` explicitly to center pz as well.
+    """
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    m = _normalize_mask(mask, n)
+    w = _get_weight_array(out, weight, absolute=True)
+    valid = m & np.isfinite(w) & (w > 0.0)
+    wsum = float(np.sum(w[valid]))
+    if wsum <= 0.0:
+        raise ValueError("Total weight in selected mask must be positive.")
+    for key in axes:
+        arr = out.get_data(key).copy()
+        mean = float(np.sum(arr[valid] * w[valid]) / wsum)
+        arr[m] -= mean
+        out.update_quantity(key, arr)
+    return out
