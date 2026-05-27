@@ -138,3 +138,47 @@ class TestCenterBeam:
         w = np.abs(out.get_data("lam"))
         assert abs(_weighted_mean(out.get_data("x"), w)) < 1e-10
         np.testing.assert_array_equal(out.get_data("y"), y_before)
+
+
+from partdist.pdslice.manipulator import match_twiss_x
+from partdist.pd3d.analysis import compute_phase_space_plane
+
+
+class TestMatchTwissX:
+    def test_recovers_target_alpha_beta(self):
+        d = gauss_slice()
+        out = match_twiss_x(d, alpha=2.0, beta=5.0)
+        result = compute_phase_space_plane(out, plane="x", weight="lam_abs")
+        assert abs(result.alpha - 2.0) < 1e-10
+        assert abs(result.beta - 5.0) < 1e-10
+
+    def test_emittance_preserved(self):
+        d = gauss_slice()
+        eps_before = compute_phase_space_plane(d, plane="x", weight="lam_abs").geometric_emittance
+        out = match_twiss_x(d, alpha=1.5, beta=3.0)
+        eps_after = compute_phase_space_plane(out, plane="x", weight="lam_abs").geometric_emittance
+        assert abs(eps_after - eps_before) / eps_before < 1e-12
+
+    def test_y_plane_unaffected(self):
+        d = gauss_slice()
+        y_before = d.get_data("y").copy()
+        py_before = d.get_data("py").copy()
+        out = match_twiss_x(d, alpha=2.0, beta=5.0)
+        np.testing.assert_array_equal(out.get_data("y"), y_before)
+        np.testing.assert_array_equal(out.get_data("py"), py_before)
+
+    def test_preserve_centroid(self):
+        d = shift_centroid(gauss_slice(), dx=1e-3, dpx=100.0)
+        x_mean_before = d.get_data("x").mean()
+        out = match_twiss_x(d, alpha=1.0, beta=2.0, preserve_centroid=True)
+        # weighted mean stays approximately at original
+        w = np.abs(out.get_data("lam"))
+        x_mean_after = _weighted_mean(out.get_data("x"), w)
+        assert abs(x_mean_after - x_mean_before) < 1e-10
+
+    def test_rejects_nonpositive_beta(self):
+        d = gauss_slice()
+        with pytest.raises(ValueError, match="beta"):
+            match_twiss_x(d, alpha=1.0, beta=0.0)
+        with pytest.raises(ValueError, match="beta"):
+            match_twiss_x(d, alpha=1.0, beta=-1.0)

@@ -112,3 +112,123 @@ def center_beam(
         arr[m] -= mean
         out.update_quantity(key, arr)
     return out
+
+
+def match_twiss_x(
+    dist: SliceDistribution,
+    alpha: float,
+    beta: float,
+    *,
+    weight: Union[None, str, ArrayLike] = "lam_abs",
+    mask: Optional[Union[np.ndarray, Sequence[bool]]] = None,
+    center_before_match: bool = True,
+    preserve_centroid: bool = True,
+    inplace: bool = False,
+) -> SliceDistribution:
+    """Match Twiss (alpha, beta) in the x plane via Courant-Snyder.
+
+    Applies the Courant-Snyder transformation that maps the current
+    weighted Twiss parameters in the x plane to the target (alpha, beta),
+    preserving geometric emittance exactly.
+
+    Parameters
+    ----------
+    dist : SliceDistribution
+        Input distribution.
+    alpha : float
+        Target Twiss alpha parameter.
+    beta : float
+        Target Twiss beta parameter [m/rad].  Must be positive.
+    weight : str or array-like or None
+        Particle weights for second-moment computation.
+        Defaults to ``"lam_abs"`` (charge-weighted).
+    mask : array-like of bool or None
+        Boolean mask selecting particles to include in the Twiss
+        computation and transformation.  Unmasked particles are
+        left unchanged.
+    center_before_match : bool
+        If True (default), use centered covariance (subtract the
+        weighted mean before computing current Twiss).  If False,
+        use raw second moments about zero.
+    preserve_centroid : bool
+        Only active when ``center_before_match=True``.  If True
+        (default), the weighted mean of x and x' is restored after
+        the transformation so the centroid position is unchanged.
+    inplace : bool
+        Modify ``dist`` in place when True.  Returns the modified
+        distribution either way.
+
+    Returns
+    -------
+    SliceDistribution
+        Distribution with x (and px) updated to match target Twiss.
+        y, py, pz, and all other quantities are unchanged.
+    """
+    if beta <= 0.0:
+        raise ValueError(f"Target beta must be positive, got {beta}.")
+
+    out = _copy_or_inplace(dist, inplace=inplace)
+    n = len(out)
+    w = _get_weight_array(out, weight, absolute=True)
+    m = _normalize_mask(mask, n)
+
+    u = _extract_data(out, "x", n_expected=n, dtype=float, name="x")
+    pu = _extract_data(out, "px", n_expected=n, dtype=float, name="px")
+    pz = _extract_data(out, "pz", n_expected=n, dtype=float, name="pz")
+
+    valid = (
+        m
+        & np.isfinite(u)
+        & np.isfinite(pu)
+        & np.isfinite(pz)
+        & np.isfinite(w)
+        & (np.abs(pz) > 0.0)
+    )
+    if np.count_nonzero(valid) < 2:
+        raise ValueError("At least two valid selected particles are required for Twiss matching.")
+    if float(np.sum(w[valid])) <= 0.0:
+        raise ValueError("Selected particles must have strictly positive total weight.")
+
+    up = pu / pz
+    u_sel, up_sel, pz_sel, w_sel = u[valid], up[valid], pz[valid], w[valid]
+
+    if center_before_match:
+        alpha_old, beta_old, _eps_old, mean_u, mean_up = (
+            _weighted_centered_twiss_from_arrays(u_sel, up_sel, w_sel)
+        )
+        work_u = u_sel - mean_u
+        work_up = up_sel - mean_up
+    else:
+        alpha_old, beta_old, _eps_old = _weighted_raw_twiss_from_arrays(u_sel, up_sel, w_sel)
+        mean_u = 0.0
+        mean_up = 0.0
+        work_u = u_sel
+        work_up = up_sel
+
+    if beta_old <= 0.0:
+        raise ValueError("Current beta is non-positive, cannot perform Twiss matching.")
+
+    # Courant-Snyder transformation matrix
+    r11 = np.sqrt(beta / beta_old)
+    r12 = 0.0
+    r21 = (alpha_old - alpha) / np.sqrt(beta_old * beta)
+    r22 = np.sqrt(beta_old / beta)
+
+    work_u_new = r11 * work_u + r12 * work_up
+    work_up_new = r21 * work_u + r22 * work_up
+
+    if center_before_match and preserve_centroid:
+        u_new_sel = work_u_new + mean_u
+        up_new_sel = work_up_new + mean_up
+    else:
+        u_new_sel = work_u_new
+        up_new_sel = work_up_new
+
+    u_new = u.copy()
+    pu_new = pu.copy()
+    u_new[valid] = u_new_sel
+    pu_new[valid] = up_new_sel * pz_sel
+
+    out.update_quantity("x", u_new)
+    out.update_quantity("px", pu_new)
+    return out
