@@ -7,6 +7,17 @@ from .generator import (
     Isotropic,
     make_slice,
 )
+from .manipulator import (
+    shift_centroid,
+    center_beam,
+    match_twiss_x,
+    match_twiss_y,
+    match_twiss_xy,
+    apply_dispersion,
+    rotate_xy,
+    scale_rms_x,
+    scale_rms_y,
+)
 
 __all__ = [
     "SliceDistribution",
@@ -16,4 +27,13 @@ __all__ = [
     "Plateau",
     "RadialUniform",
     "Isotropic",
+    "shift_centroid",
+    "center_beam",
+    "match_twiss_x",
+    "match_twiss_y",
+    "match_twiss_xy",
+    "apply_dispersion",
+    "rotate_xy",
+    "scale_rms_x",
+    "scale_rms_y",
 ]

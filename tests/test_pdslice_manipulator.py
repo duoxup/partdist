@@ -401,3 +401,31 @@ class TestSharedBehaviour:
             np.testing.assert_allclose(
                 out_str.get_data(key), out_arr.get_data(key), rtol=1e-12, atol=1e-15,
             )
+
+
+class TestPackageReexports:
+    def test_imports_from_pdslice_package(self):
+        from partdist.pdslice import (
+            shift_centroid, center_beam,
+            match_twiss_x, match_twiss_y, match_twiss_xy,
+            apply_dispersion, rotate_xy,
+            scale_rms_x, scale_rms_y,
+        )
+        assert all(callable(f) for f in (
+            shift_centroid, center_beam,
+            match_twiss_x, match_twiss_y, match_twiss_xy,
+            apply_dispersion, rotate_xy,
+            scale_rms_x, scale_rms_y,
+        ))
+
+    def test_not_re_exported_at_top_level(self):
+        import partdist
+        for name in (
+            "shift_centroid", "center_beam",
+            "match_twiss_x", "match_twiss_y", "match_twiss_xy",
+            "apply_dispersion", "rotate_xy",
+            "scale_rms_x", "scale_rms_y",
+        ):
+            assert not hasattr(partdist, name), (
+                f"{name} should NOT be re-exported at partdist top level"
+            )
