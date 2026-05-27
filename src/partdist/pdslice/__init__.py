@@ -18,6 +18,7 @@ from .manipulator import (
     scale_rms_x,
     scale_rms_y,
 )
+from . import viz
 
 __all__ = [
     "SliceDistribution",
