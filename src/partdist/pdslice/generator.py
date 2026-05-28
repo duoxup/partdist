@@ -9,6 +9,7 @@ Shapes:
     - Gaussian:       1D normal with optional truncation (ASTRA-style `cut`)
     - Uniform:        1D hard-edged uniform on [mean - L/2, mean + L/2]
     - Plateau:        1D flat top with Fermi-Dirac soft edges of width `r`
+    - Constant:       1D delta at 0 (all particles share the same value)
     - RadialUniform:  joint 2D uniform on a disk of radius R (KV-like)
     - Isotropic:      joint (px, py, pz) on half-sphere |p|=p_mag, pz >= 0
 
@@ -116,6 +117,29 @@ class Plateau:
 
 
 @dataclass(frozen=True)
+class Constant:
+    """1D delta-function shape: every sample is exactly 0.
+
+    Use to fix an axis to a single value. Following the zero-mean contract
+    of all generator shapes, the value itself is 0 — combine with
+    ``pz_anchor`` (for ``pz``) or ``shift_centroid`` (for ``x/y/px/py``) to
+    set a non-zero constant after generation.
+
+    Common uses:
+        - ``pz=Constant(), pz_anchor=5e5`` → monoenergetic beam at 5e5 eV/c.
+        - ``x=Constant()`` → pencil beam at x=0.
+        - ``px=Constant()`` → transversely cold beam (px=0 exactly).
+
+    Statistical functions that compute σ or ε will return 0 on a Constant
+    axis; downstream code must tolerate this (e.g. Twiss matching of a
+    perfectly cold plane is undefined).
+    """
+
+    def _sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        return np.zeros(n, dtype=float)
+
+
+@dataclass(frozen=True)
 class RadialUniform:
     """Joint 2D uniform shape on a disk of radius R centred at origin.
 
@@ -169,7 +193,7 @@ class Isotropic:
 
 
 # Type alias for independent-axis shapes (1D)
-_Axis1D = Union[Gaussian, Uniform, Plateau]
+_Axis1D = Union[Gaussian, Uniform, Plateau, Constant]
 
 
 def make_slice(

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from partdist.pdslice.generator import (
-    Gaussian, Uniform, Plateau, RadialUniform, Isotropic, make_slice,
+    Gaussian, Uniform, Plateau, Constant, RadialUniform, Isotropic, make_slice,
 )
 from partdist import SliceDistribution
 
@@ -53,6 +53,10 @@ class TestShapeConstruction:
             Plateau(L=0.0, r=1e-4)
         with pytest.raises(ValueError, match="r"):
             Plateau(L=1e-3, r=0.0)
+
+    def test_constant_basic(self):
+        c = Constant()
+        assert c is not None
 
     def test_radial_uniform_basic(self):
         r = RadialUniform(R=1e-3)
@@ -161,6 +165,22 @@ class TestPlateauSampling:
         sigma = samples.std()
         uniform_sigma = 1.0 / (2.0 * math.sqrt(3.0))
         assert abs(sigma - uniform_sigma) < 0.01
+
+
+class TestConstantSampling:
+    def test_all_zeros_exact(self):
+        c = Constant()
+        rng = np.random.default_rng(0)
+        samples = c._sample(10_000, rng)
+        assert samples.shape == (10_000,)
+        assert samples.dtype == np.float64
+        assert np.all(samples == 0.0)
+
+    def test_zero_size(self):
+        c = Constant()
+        rng = np.random.default_rng(0)
+        samples = c._sample(0, rng)
+        assert samples.shape == (0,)
 
 
 class TestRadialUniformSampling:
@@ -354,6 +374,46 @@ class TestMakeSliceSmoke:
                 seed=0,
             )
 
+    def test_constant_pz_gives_monoenergetic_beam(self):
+        """pz=Constant() + pz_anchor=P should produce pz_i ≡ P exactly."""
+        P = 5e5
+        d = make_slice(
+            500,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+            px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
+            pz=Constant(), pz_anchor=P,
+            seed=0,
+        )
+        pz = d.get_data("pz")
+        assert np.all(pz == P)
+
+    def test_constant_transverse_gives_pencil_beam(self):
+        """x=Constant() and y=Constant() → all particles at the origin."""
+        d = make_slice(
+            500,
+            I_total=1e-3,
+            x=Constant(), y=Constant(),
+            px=Gaussian(sig=1e3), py=Gaussian(sig=1e3),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
+            seed=0,
+        )
+        assert np.all(d.get_data("x") == 0.0)
+        assert np.all(d.get_data("y") == 0.0)
+
+    def test_constant_transverse_momentum_gives_cold_beam(self):
+        """px=Constant() and py=Constant() → transversely cold beam."""
+        d = make_slice(
+            500,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+            px=Constant(), py=Constant(),
+            pz=Gaussian(sig=1e3), pz_anchor=5e5,
+            seed=0,
+        )
+        assert np.all(d.get_data("px") == 0.0)
+        assert np.all(d.get_data("py") == 0.0)
+
 
 class TestMakeSliceIntegration:
     def test_full_gaussian_stats(self):
@@ -466,10 +526,11 @@ class TestPublicAPI:
     def test_imports_from_pdslice_package(self):
         from partdist.pdslice import (
             make_slice,
-            Gaussian, Uniform, Plateau, RadialUniform, Isotropic,
+            Gaussian, Uniform, Plateau, Constant, RadialUniform, Isotropic,
         )
         assert callable(make_slice)
         assert Gaussian(sig=1.0) is not None
+        assert Constant() is not None
 
     def test_not_re_exported_at_top_level(self):
         """Per top-level-surface policy: container-specific generators
