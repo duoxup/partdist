@@ -12,6 +12,7 @@ Shapes:
     - Constant:       1D delta at 0 (all particles share the same value)
     - RadialUniform:  joint 2D uniform on a disk of radius R (KV-like)
     - Isotropic:      joint (px, py, pz) on half-sphere |p|=p_mag, pz >= 0
+    - ThermalCathode: joint (px, py, pz) for thermionic cathode at temperature T
 
 Units:
     - positions:  metres (SI)
@@ -23,6 +24,12 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import numpy as np
+from scipy.constants import c as _C_SI, e as _E_SI, k as _KB_SI, m_e as _ME_SI
+
+# Electron rest energy in eV — for converting thermal momentum scale to eV/c.
+_ME_C2_EV = _ME_SI * _C_SI ** 2 / abs(_E_SI)
+# Boltzmann constant in eV/K — for converting T[K] to kT[eV].
+_KB_EV_PER_K = _KB_SI / abs(_E_SI)
 
 
 @dataclass(frozen=True)
@@ -192,6 +199,50 @@ class Isotropic:
         return px, py, pz
 
 
+@dataclass(frozen=True)
+class ThermalCathode:
+    """Joint (px, py, pz) for thermionic cathode emission at temperature T.
+
+    Flux-weighted Maxwell-Boltzmann (only forward-emitted electrons escape):
+
+        f(px, py, pz) ∝ vz · exp(-(px² + py² + pz²) / (2·m_e·k_B·T)),  pz > 0
+
+    Splits into:
+        - px, py: independent Gaussians, zero-mean, σ = σ_th
+        - pz:     Rayleigh distribution, scale = σ_th, ⟨pz⟩ = σ_th·√(π/2)
+
+    where σ_th = √(m_e·c² · k_B·T) in eV/c (non-relativistic; valid for any
+    practical cathode temperature since k_B·T ≪ m_e·c² up to T ~ 10⁹ K).
+
+    Parameters
+    ----------
+    T : float
+        Cathode temperature in Kelvin (> 0).
+
+    Notes
+    -----
+    Statistics: ⟨KE_x⟩ = ⟨KE_y⟩ = k_B·T/2,  ⟨KE_z⟩ = k_B·T.
+    For T = 1200 K (typical LaB₆ / W): σ_th ≈ 230 eV/c.
+    """
+    T: float
+
+    def __post_init__(self) -> None:
+        if self.T <= 0:
+            raise ValueError(f"ThermalCathode.T must be > 0 K, got {self.T}")
+
+    @property
+    def sigma_th(self) -> float:
+        """Thermal momentum scale σ_th = √(m_e·c² · k_B·T) in eV/c."""
+        return float(np.sqrt(_ME_C2_EV * _KB_EV_PER_K * self.T))
+
+    def _sample3d(self, n: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        sigma = self.sigma_th
+        px = rng.normal(loc=0.0, scale=sigma, size=n)
+        py = rng.normal(loc=0.0, scale=sigma, size=n)
+        pz = rng.rayleigh(scale=sigma, size=n)
+        return px, py, pz
+
+
 # Type alias for independent-axis shapes (1D)
 _Axis1D = Union[Gaussian, Uniform, Plateau, Constant]
 
@@ -209,7 +260,7 @@ def make_slice(
     pz_anchor: Optional[float] = None,
     transverse: Optional[RadialUniform] = None,
     transverse_momentum: Optional[RadialUniform] = None,
-    momentum: Optional[Isotropic] = None,
+    momentum: Optional[Union[Isotropic, ThermalCathode]] = None,
     seed: Optional[int] = None,
 ):
     """Generate a SliceDistribution from per-axis shape primitives.
@@ -238,7 +289,7 @@ def make_slice(
         Joint (x, y) shape. Excludes ``x`` and ``y``.
     transverse_momentum : RadialUniform | None
         Joint (px, py) shape. Excludes ``px`` and ``py``.
-    momentum : Isotropic | None
+    momentum : Isotropic | ThermalCathode | None
         Joint (px, py, pz) shape. Excludes ``px``, ``py``, ``pz``,
         ``pz_anchor``, and ``transverse_momentum``.
     seed : int | None
@@ -268,8 +319,9 @@ def make_slice(
         )
     if momentum is not None and pz_anchor is not None:
         raise ValueError(
-            "Cannot set 'pz_anchor' together with 'momentum'; the Isotropic "
-            "shape determines pz entirely from its half-sphere geometry."
+            "Cannot set 'pz_anchor' together with 'momentum'; the joint "
+            "momentum shape determines pz entirely (its mean is fixed by "
+            "the shape's physics)."
         )
 
     if transverse is None and (x is None or y is None):

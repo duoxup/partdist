@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from partdist.pdslice.generator import (
-    Gaussian, Uniform, Plateau, Constant, RadialUniform, Isotropic, make_slice,
+    Gaussian, Uniform, Plateau, Constant, RadialUniform, Isotropic,
+    ThermalCathode, make_slice,
 )
 from partdist import SliceDistribution
 
@@ -73,6 +74,16 @@ class TestShapeConstruction:
     def test_isotropic_rejects_nonpositive_p_mag(self):
         with pytest.raises(ValueError, match="p_mag"):
             Isotropic(p_mag=0.0)
+
+    def test_thermal_cathode_basic(self):
+        tc = ThermalCathode(T=1200.0)
+        assert tc.T == 1200.0
+
+    def test_thermal_cathode_rejects_nonpositive_T(self):
+        with pytest.raises(ValueError, match="T"):
+            ThermalCathode(T=0.0)
+        with pytest.raises(ValueError, match="T"):
+            ThermalCathode(T=-300.0)
 
     def test_shapes_are_frozen(self):
         g = Gaussian(sig=1e-4)
@@ -228,6 +239,53 @@ class TestIsotropicSampling:
         assert abs(py.mean()) < 0.01 * P
 
 
+class TestThermalCathodeSampling:
+    """Flux-weighted Maxwell-Boltzmann (px,py: Gaussian; pz: Rayleigh)."""
+
+    def test_sigma_th_at_1200K_matches_physics(self):
+        """σ_th = √(m_e·c² · k_B·T); for T=1200 K should be ≈230 eV/c."""
+        tc = ThermalCathode(T=1200.0)
+        assert abs(tc.sigma_th - 229.87) < 0.02
+
+    def test_sigma_th_scales_as_sqrt_T(self):
+        """Doubling T scales σ_th by √2 (since σ_th² ∝ T)."""
+        s1 = ThermalCathode(T=300.0).sigma_th
+        s2 = ThermalCathode(T=600.0).sigma_th
+        assert abs(s2 / s1 - math.sqrt(2.0)) < 1e-12
+
+    def test_transverse_gaussian_zero_mean(self):
+        tc = ThermalCathode(T=1500.0)
+        sigma = tc.sigma_th
+        rng = np.random.default_rng(0)
+        px, py, pz = tc._sample3d(200_000, rng)
+        assert px.shape == (200_000,)
+        assert abs(px.mean()) < 0.01 * sigma
+        assert abs(py.mean()) < 0.01 * sigma
+        assert abs(px.std() - sigma) < 0.01 * sigma
+        assert abs(py.std() - sigma) < 0.01 * sigma
+
+    def test_longitudinal_rayleigh_stats(self):
+        """Rayleigh(σ): ⟨pz⟩=σ·√(π/2), σ_pz=σ·√(2−π/2), pz ≥ 0."""
+        tc = ThermalCathode(T=1500.0)
+        sigma = tc.sigma_th
+        rng = np.random.default_rng(1)
+        _px, _py, pz = tc._sample3d(200_000, rng)
+        assert np.all(pz >= 0.0)
+        assert abs(pz.mean() - sigma * math.sqrt(math.pi / 2.0)) < 0.01 * sigma
+        assert abs(pz.std() - sigma * math.sqrt(2.0 - math.pi / 2.0)) < 0.01 * sigma
+
+    def test_axes_independent(self):
+        """⟨px·py⟩ ≈ 0, ⟨px·pz⟩ ≈ 0 — no inter-axis correlation."""
+        tc = ThermalCathode(T=1200.0)
+        sigma = tc.sigma_th
+        rng = np.random.default_rng(2)
+        px, py, pz = tc._sample3d(200_000, rng)
+        cov_xy = float(np.mean(px * py))
+        cov_xz = float(np.mean(px * (pz - pz.mean())))
+        assert abs(cov_xy) < 0.01 * sigma ** 2
+        assert abs(cov_xz) < 0.01 * sigma ** 2
+
+
 class TestMakeSliceValidation:
     GAUSS = Gaussian(sig=1e-4)
     GAUSS_PZ = Gaussian(sig=1e3)
@@ -282,6 +340,13 @@ class TestMakeSliceValidation:
             make_slice(100, I_total=1.0,
                        x=self.GAUSS, y=self.GAUSS,
                        momentum=iso, pz_anchor=self.PZ_ANCHOR)
+
+    def test_pz_anchor_conflicts_with_thermal_cathode(self):
+        tc = ThermalCathode(T=1200.0)
+        with pytest.raises(ValueError, match="pz_anchor"):
+            make_slice(100, I_total=1e-3,
+                       x=self.GAUSS, y=self.GAUSS,
+                       momentum=tc, pz_anchor=self.PZ_ANCHOR)
 
     def test_missing_transverse_position(self):
         with pytest.raises(ValueError, match="x.*y|transverse"):
@@ -414,6 +479,32 @@ class TestMakeSliceSmoke:
         assert np.all(d.get_data("px") == 0.0)
         assert np.all(d.get_data("py") == 0.0)
 
+    def test_thermal_cathode_momentum_integrates(self):
+        """make_slice with momentum=ThermalCathode(T) produces a valid slice
+        with forward-moving (pz>0) electrons at thermal-scale momenta."""
+        d = make_slice(
+            5000,
+            I_total=1e-3,
+            x=Gaussian(sig=1e-4), y=Gaussian(sig=1e-4),
+            momentum=ThermalCathode(T=1200.0),
+            seed=0,
+        )
+        assert isinstance(d, SliceDistribution)
+        assert d.n == 5000
+        pz = d.get_data("pz")
+        assert np.all(pz > 0.0)
+        # Sanity: σ_th ≈ 230 eV/c at 1200 K
+        assert 200.0 < d.get_data("px").std() < 260.0
+        assert 200.0 < d.get_data("py").std() < 260.0
+        # I_total reconstruction holds (uniform lam · vz sum)
+        lam = d.get_data("lam")
+        from partdist.pd3d.utils import momentum_evc_to_velocity
+        _vx, _vy, vz = momentum_evc_to_velocity(
+            d.get_data("px"), d.get_data("py"), pz
+        )
+        I_rec = float(np.sum(lam * vz))
+        assert abs(I_rec - 1e-3) / 1e-3 < 1e-12
+
 
 class TestMakeSliceIntegration:
     def test_full_gaussian_stats(self):
@@ -527,10 +618,12 @@ class TestPublicAPI:
         from partdist.pdslice import (
             make_slice,
             Gaussian, Uniform, Plateau, Constant, RadialUniform, Isotropic,
+            ThermalCathode,
         )
         assert callable(make_slice)
         assert Gaussian(sig=1.0) is not None
         assert Constant() is not None
+        assert ThermalCathode(T=1200.0) is not None
 
     def test_not_re_exported_at_top_level(self):
         """Per top-level-surface policy: container-specific generators

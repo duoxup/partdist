@@ -6,6 +6,7 @@ from .generator import (
     Constant,
     RadialUniform,
     Isotropic,
+    ThermalCathode,
     make_slice,
 )
 from .manipulator import (
@@ -32,6 +33,7 @@ __all__ = [
     "Constant",
     "RadialUniform",
     "Isotropic",
+    "ThermalCathode",
     "shift_centroid",
     "center_beam",
     "match_twiss_x",
