@@ -273,7 +273,11 @@ def make_slice(
         Number of macroparticles (>= 1).
     I_total : float
         Total current in Amperes; uniformly distributed to per-particle
-        line charge density ``lam_i = I_total / (<v_z> · n)``.
+        line charge density ``lam_i = I_total / (<v_z> · n)``. The sign is
+        preserved — pass a negative ``I_total`` for electron beams (negative
+        charge carriers travelling in +z) so the resulting ``lam`` is
+        negative, matching the signed-charge convention used by downstream
+        Poisson solvers. Zero is rejected.
     z : float
         Longitudinal position of the slice [m].
     x, y, px, py, pz : 1D-shape | None
@@ -297,8 +301,8 @@ def make_slice(
     """
     if n < 1:
         raise ValueError(f"n must be >= 1, got {n}")
-    if I_total <= 0:
-        raise ValueError(f"I_total must be > 0, got {I_total}")
+    if I_total == 0:
+        raise ValueError(f"I_total must be nonzero, got {I_total}")
 
     if transverse is not None and (x is not None or y is not None):
         raise ValueError(

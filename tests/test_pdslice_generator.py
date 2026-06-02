@@ -298,17 +298,22 @@ class TestMakeSliceValidation:
                        px=self.GAUSS, py=self.GAUSS,
                        pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
 
-    def test_rejects_nonpositive_I_total(self):
+    def test_rejects_zero_I_total(self):
         with pytest.raises(ValueError, match="I_total"):
             make_slice(100, I_total=0.0,
                        x=self.GAUSS, y=self.GAUSS,
                        px=self.GAUSS, py=self.GAUSS,
                        pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
-        with pytest.raises(ValueError, match="I_total"):
-            make_slice(100, I_total=-1.0,
-                       x=self.GAUSS, y=self.GAUSS,
-                       px=self.GAUSS, py=self.GAUSS,
-                       pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
+
+    def test_negative_I_total_gives_negative_lam(self):
+        """Electron beams: pass I_total < 0 → lam < 0 (sign-preserving)."""
+        dist = make_slice(100, I_total=-1.0,
+                          x=self.GAUSS, y=self.GAUSS,
+                          px=self.GAUSS, py=self.GAUSS,
+                          pz=self.GAUSS_PZ, pz_anchor=self.PZ_ANCHOR)
+        lam = np.asarray(dist.lam)
+        assert np.all(lam < 0)
+        assert np.allclose(lam, lam[0])  # uniform across particles
 
     def test_transverse_conflicts_with_x_or_y(self):
         ru = RadialUniform(R=1e-3)
