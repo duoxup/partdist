@@ -1532,6 +1532,7 @@ class BeamDiagnosticsResult:
     chirp:               float   # dδ/dz [m⁻¹]
     quadratic_chirp:     float   # [m⁻²]
     cubic_chirp:         float   # [m⁻³]
+    f_nonlinear:         float   # nonlinear fraction of pz(z) chirp [0, 1]
 
     # ── current ───────────────────────────────────────────────────────
     I_peak_raw:          float   # [A]
@@ -1627,6 +1628,9 @@ def compute_beam_diagnostics(
     # ── energy spread decomposition ───────────────────────────────────
     sig_E_uncorr, sig_E_slice_max = _compute_slice_energy_spread(d, n_slices_energy)
 
+    # ── longitudinal nonlinearity ─────────────────────────────────────
+    f_nonlinear = compute_longitudinal_linearity(d).f_nonlinear
+
     # ── transverse ───────────────────────────────────────────────────
     _, I_smo = d.current_profile_z_smooth
 
@@ -1672,6 +1676,7 @@ def compute_beam_diagnostics(
         chirp            = d.chirp,
         quadratic_chirp  = d.quadratic_chirp,
         cubic_chirp      = d.cubic_chirp,
+        f_nonlinear      = f_nonlinear,
         # current
         I_peak_raw       = d.I_peak,
         I_peak_smooth    = float(np.max(I_smo)),
